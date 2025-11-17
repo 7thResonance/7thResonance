@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="33465f03a897c16472d4edad015ad130e77bc28d">
+<index version="1" name="7thResonance" commit="f6d1642a7fa955ce2b125313a2e1219ac85551be">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -203,6 +203,10 @@
       <version name="1.01" author="7thResonance" time="2025-11-14T07:44:21Z">
         <changelog><![CDATA[- Added bypass and offline state synchronization.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/595a41972549c4c96ed3c59986ae4de9b1579cac/Utilities/7R%20FX%20Link%20(Relative).lua</source>
+      </version>
+      <version name="1.02" author="7thResonance" time="2025-11-16T05:03:14Z">
+        <changelog><![CDATA[- Affects FX based on FX instance position. (made this the default behavior)]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/f6d1642a7fa955ce2b125313a2e1219ac85551be/Utilities/7R%20FX%20Link%20(Relative).lua</source>
       </version>
     </reapack>
     <reapack name="7R FX Send Manager.lua" type="script" desc="7R FX Send Manager">
