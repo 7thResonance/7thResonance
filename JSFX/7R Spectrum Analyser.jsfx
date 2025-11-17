@@ -1,10 +1,11 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.1
+version: 1.2
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main graph is blue
-changelog: Organised Data
+changelog: added right click menu to enable/disable side channel spectrum
+    added ITU-R 468 weighting (usefull for less bass response)
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -20,6 +21,9 @@ slider4:2<0,3,1{rectangular,hamming,blackman-harris,blackman}>-window
 slider5:0<0,2500,1>-integration time (ms)
 slider6:0<0,12,0.1>-slope (dB/octave)
 slider7:1000<10,10000,1>-octave gain center (Hz)
+slider8:0<0,1,1{original,mid/side}>-show mid/side
+slider9:0<0,1,1{disabled,enabled}>-itu weighting
+
 
 in_pin:left input
 in_pin:right input
@@ -35,6 +39,7 @@ fftsize=max_fft_size;
 gfx_clear=-1;
 windowtype=-1;
 fftidx=-1;
+old_itu = 0;
 
 histsize=max_fft_size + (max_fft_size*0.5 - 1);
 window=histsize;
@@ -47,8 +52,62 @@ integrate_buf2 = fftworkspace2 + max_fft_size*2;
 recpos2_offset = integrate_buf2 + max_fft_size*2;
 recpos2 = recpos2_offset;
 
+// temporary buffer for magnitude calculations
+mag_buf_temp = recpos2_offset + histsize;
+
+// ITU-R 468 weighting filter state variables
+itu_filter_mem = mag_buf_temp + max_fft_size;
+// States for L channel (6 total: 2 per section)
+itu_z_l0_u1 = itu_filter_mem;     // section 0, u[n-1]
+itu_z_l0_u2 = itu_z_l0_u1 + 1;    // section 0, u[n-2]
+itu_z_l1_u1 = itu_z_l0_u2 + 1;    // section 1, u[n-1]
+itu_z_l1_u2 = itu_z_l1_u1 + 1;    // section 1, u[n-2]
+itu_z_l2_u1 = itu_z_l1_u2 + 1;    // section 2, u[n-1]
+itu_z_l2_u2 = itu_z_l2_u1 + 1;    // section 2, u[n-2]
+// States for R channel (6 total: 2 per section)
+itu_z_r0_u1 = itu_z_l2_u2 + 1;
+itu_z_r0_u2 = itu_z_r0_u1 + 1;
+itu_z_r1_u1 = itu_z_r0_u2 + 1;
+itu_z_r1_u2 = itu_z_r1_u1 + 1;
+itu_z_r2_u1 = itu_z_r1_u2 + 1;
+itu_z_r2_u2 = itu_z_r2_u1 + 1;
+
+// Hardcoded SOS coeffs (b0,b1,b2 | a0=1,a1,a2) for fs=48000
+// Section 0 (low-freq emphasis)
+sos0_b0 = 0.03895648;
+sos0_b1 = 0.07796198;
+sos0_b2 = 0.03900552;
+sos0_a1 = -0.78503289;
+sos0_a2 = 0.12076391;
+// Section 1 (mid shaping)
+sos1_b0 = 1.00000000;
+sos1_b1 = 1.99952035;
+sos1_b2 = 0.99952096;
+sos1_a1 = -0.93847268;
+sos1_a2 = 0.41986127;
+// Section 2 (high-freq rolloff)
+sos2_b0 = 1.00000000;
+sos2_b1 = -0.00077845;
+sos2_b2 = -0.99922155;
+sos2_a1 = -0.58162359;
+sos2_a2 = 0.57828378;
+
+// Init states to 0
+loop(12,
+  itu_filter_mem[i] = 0;
+  i += 1;
+);
+
+
 @slider
 old_w=0;
+slider9 != old_itu ? (
+  old_itu = slider9;
+  loop(12,
+    itu_filter_mem[i] = 0;
+    i += 1;
+  );
+);
 
 @block
 slider2 != lfloor ? (
@@ -57,9 +116,56 @@ slider2 != lfloor ? (
 );
 
 @sample
-abs(recpos[]=spl0+spl1) > minvol ? update=1;
+slider9 > 0.5 ? (
+  // Left channel cascade
+  // Section 0
+  u0_l = spl0 - sos0_a1 * itu_z_l0_u1[0] - sos0_a2 * itu_z_l0_u2[0];
+  y0_l = sos0_b0 * u0_l + sos0_b1 * itu_z_l0_u1[0] + sos0_b2 * itu_z_l0_u2[0];
+  itu_z_l0_u2[0] = itu_z_l0_u1[0];
+  itu_z_l0_u1[0] = u0_l;
+  
+  // Section 1
+  u1_l = y0_l - sos1_a1 * itu_z_l1_u1[0] - sos1_a2 * itu_z_l1_u2[0];
+  y1_l = sos1_b0 * u1_l + sos1_b1 * itu_z_l1_u1[0] + sos1_b2 * itu_z_l1_u2[0];
+  itu_z_l1_u2[0] = itu_z_l1_u1[0];
+  itu_z_l1_u1[0] = u1_l;
+  
+  // Section 2
+  u2_l = y1_l - sos2_a1 * itu_z_l2_u1[0] - sos2_a2 * itu_z_l2_u2[0];
+  y2_l = sos2_b0 * u2_l + sos2_b1 * itu_z_l2_u1[0] + sos2_b2 * itu_z_l2_u2[0];
+  itu_z_l2_u2[0] = itu_z_l2_u1[0];
+  itu_z_l2_u1[0] = u2_l;
+  
+  filtered_l = y2_l;
+  
+  // Right channel cascade (mirror left)
+  // Section 0
+  u0_r = spl1 - sos0_a1 * itu_z_r0_u1[0] - sos0_a2 * itu_z_r0_u2[0];
+  y0_r = sos0_b0 * u0_r + sos0_b1 * itu_z_r0_u1[0] + sos0_b2 * itu_z_r0_u2[0];
+  itu_z_r0_u2[0] = itu_z_r0_u1[0];
+  itu_z_r0_u1[0] = u0_r;
+  
+  // Section 1
+  u1_r = y0_r - sos1_a1 * itu_z_r1_u1[0] - sos1_a2 * itu_z_r1_u2[0];
+  y1_r = sos1_b0 * u1_r + sos1_b1 * itu_z_r1_u1[0] + sos1_b2 * itu_z_r1_u2[0];
+  itu_z_r1_u2[0] = itu_z_r1_u1[0];
+  itu_z_r1_u1[0] = u1_r;
+  
+  // Section 2
+  u2_r = y1_r - sos2_a1 * itu_z_r2_u1[0] - sos2_a2 * itu_z_r2_u2[0];
+  y2_r = sos2_b0 * u2_r + sos2_b1 * itu_z_r2_u1[0] + sos2_b2 * itu_z_r2_u2[0];
+  itu_z_r2_u2[0] = itu_z_r2_u1[0];
+  itu_z_r2_u1[0] = u2_r;
+  
+  filtered_r = y2_r;
+) : (
+  filtered_l = spl0;
+  filtered_r = spl1;
+);
+
+abs(recpos[]=filtered_l+filtered_r) > minvol ? update=1;
 // derived stream: Side = (L - R)
-derived = spl0 - spl1;
+derived = filtered_l - filtered_r;
 abs(recpos2[]=derived) > minvol ? update=1;
 // advance primary recpos (original buffer starts at 0)
 recpos = ((recpos+1) >= histsize ? 0 : (recpos+1));
@@ -216,12 +322,18 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     #menustr,slider4==0?"!":"",slider4==1?"!":"", slider4==2?"!":"", slider4==3?"!":"");
     
   sprintf(#menustr,"%s|%sShow phase",#menustr,slider3>.5?"!":"");
+  
+  sprintf(#menustr,"%s|%sShow mid/side",#menustr,slider8>.5?"!":"");
+  
+  sprintf(#menustr,"%s|%sITU weighting",#menustr,slider9>.5?"!":"");
     
  ret = gfx_showmenu(#menustr);
   ret > 0 ? (
     (ret-=1) < 12 ? (slider1 = ret; slider_automate(slider1); ):
     (ret-=12) < 4 ? (slider4 = ret; slider_automate(slider4); ):
-    (ret-=4) == 0 ? (slider3 = !slider3; old_w=0; slider_automate(slider3); );
+    (ret-=4) == 0 ? (slider3 = !slider3; old_w=0; slider_automate(slider3); ) :
+    (ret-=1) == 0 ? (slider8 = !slider8; old_w=0; slider_automate(slider8); ) :
+    (ret-=1) == 0 ? (slider9 = !slider9; old_w=0; slider_automate(slider9); );
     
   );
   update=1;
@@ -319,10 +431,8 @@ update ? (
   slider5 > 0 ? (
     integrate_now = time_precise();
     integrate_en ? (
-      // fps = 1/(integrate_now - integrate_lastt);
       integrate_sc -= exp(-5 * 1000.0 * (integrate_now - integrate_lastt) / slider5);
     ) : (
-      // force overwrite of buffer
       integrate_en = 1;
     );
     integrate_lastt = integrate_now;
@@ -400,7 +510,7 @@ update ? (
 
     i ? 
     ( 
-      gfX_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1;
+      gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1;
       gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1) ;
     );
 
@@ -408,7 +518,15 @@ update ? (
     i+=1;
   );  
   
+  // Compute magnitudes for all bins first
   buf3=fftworkspace;
+  i=0;
+  loop(fftsize*0.5,
+    mag_buf_temp[i] = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+    buf3+=2;
+    i+=1;
+  );
+  
   buf2=integrate_buf;
   lx=0;
   i=0;
@@ -416,22 +534,24 @@ update ? (
   fill_slast=0;
   octavegain = floor(slider6*10+0.5) * ((log(10)*2.0/10.0)/(log(2)*20.0));
   octavegainoffs = log(1 + slider7 * fftsize / srate);
+  
   loop(fftsize*0.5,   
-    ty = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
-    octavegain > 0 ? ty += (log(i+1) - octavegainoffs)*octavegain;
-    buf3+=2;    
+    ty = mag_buf_temp[i];
+    octavegain > 0 ? (
+      ty += (log(i + 1) - octavegainoffs) * octavegain;
+    );
 
     integrate_en ? (
       ty = buf2[] += integrate_sc * (ty - buf2[]);
-      buf2+=1;
+      buf2 += 1;
     );
     
     ty = ty*-0.5*sc + 20;
-    tx = log(1.0+i*xscale)*wsc;
+    tx = log(1.0 + i * xscale) * wsc;
 
     i ? 
     ( 
-  gfx_r=0; gfx_g=0; gfx_b=1; // main spectrum: blue
+    gfx_r=0; gfx_g=0; gfx_b=1; // main spectrum: blue
       
       1/*fill?*/ ? (
         gfx_a=0.125;
@@ -460,9 +580,10 @@ update ? (
   );
 );
 
-  // --- derived stream FFT and overlay drawing (derived stored in recpos2 region)
-  // copy derived samples into fftworkspace2 with same windowing
-  buf1=recpos2-fftsize;
+   // --- derived stream FFT and overlay drawing (derived stored in recpos2 region)
+   slider8 > 0.5 ? (
+   // copy derived samples into fftworkspace2 with same windowing
+   buf1=recpos2-fftsize;
   buf1<recpos2_offset ? buf1+=histsize;
   buf2=window;
   buf3=fftworkspace2;
@@ -484,25 +605,34 @@ update ? (
   fft_permute(fftworkspace2,fftsize/2);
   fftworkspace2[1]=0;
 
-  // compute magnitudes for derived stream and draw overlay (red polyline)
+  // compute magnitudes for derived stream
   buf3=fftworkspace2;
+  i=0;
+  loop(fftsize*0.5,
+    mag_buf_temp[i] = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+    buf3+=2;
+    i+=1;
+  );
+  
+  // draw overlay (red polyline)
   buf2=integrate_buf2;
   lx=0;
   i=0;
   gfx_r=1; gfx_g=0; gfx_b=0; // red overlay
   gfx_a=0.45; // overlay opacity (65%)
   loop(fftsize*0.5,
-    ty = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
-    octavegain > 0 ? ty += (log(i+1) - octavegainoffs)*octavegain;
-    buf3+=2;
+    ty = mag_buf_temp[i];
+    octavegain > 0 ? (
+      ty += (log(i + 1) - octavegainoffs) * octavegain;
+    );
 
     integrate_en ? (
       ty = buf2[] += integrate_sc * (ty - buf2[]);
-      buf2+=1;
+      buf2 += 1;
     );
 
     ty = ty*-0.5*sc + 20;
-    tx = log(1.0+i*xscale)*wsc;
+    tx = log(1.0 + i * xscale) * wsc;
 
     i ? (
       gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
@@ -512,7 +642,10 @@ update ? (
 
     lx=tx; ly=ty;
     i+=1;
-  );
+    );
+    ); // end slider8 > 0.5 conditional
+
+    );
 
 
-);
+;
