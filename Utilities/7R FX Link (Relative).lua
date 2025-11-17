@@ -1,8 +1,8 @@
 --[[
 @description 7R FX Link (Relative)
 @author 7thResonance
-@version 1.02
-@changelog - Affects FX based on FX instance position. (made this the default behavior)
+@version 1.03
+@changelog - fixed error when selecting media item.
 @donation https://paypal.me/7thresonance
 @about Links the same FX on selected track.
 
@@ -270,7 +270,6 @@ function sync_fx_states()
   local current_selected_items = {}
   for i = 0, items_count - 1 do
     local item = reaper.GetSelectedMediaItem(0, i)
-    current_selected_items[reaper.GetMediaItemID(item)] = true
     local take = reaper.GetActiveTake(item)
     if take then
       local fx_count = reaper.TakeFX_GetCount(take)
