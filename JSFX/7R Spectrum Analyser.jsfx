@@ -1,11 +1,12 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.2
+version: 1.3
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
-    - Main graph is blue
-changelog: added right click menu to enable/disable side channel spectrum
-    added ITU-R 468 weighting (usefull for less bass response)
+    - Main (sum) graph is blue
+    - RMS mode
+    - ITU-R 468 weighting mode
+changelog: added RMS mode
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -14,6 +15,7 @@ Copyright (C) 2007 Cockos Incorporated
 License: LGPL - http://www.gnu.org/licenses/lgpl.html
 */
 
+// ----------------- User controls -----------------
 slider1:6<0,11,1{16,32,64,128,256,512,1024,2048,4096,8192,16384,32768}>-FFT size
 slider2:-120<-450,-12,6>-floor
 slider3:0<0,1,1{disabled,enabled}>-show phase
@@ -23,7 +25,8 @@ slider6:0<0,12,0.1>-slope (dB/octave)
 slider7:1000<10,10000,1>-octave gain center (Hz)
 slider8:0<0,1,1{original,mid/side}>-show mid/side
 slider9:0<0,1,1{disabled,enabled}>-itu weighting
-
+slider10:0<0,1,1{disabled,enabled}>-rms mode
+slider11:300<50,1000,10>-rms window (ms)
 
 in_pin:left input
 in_pin:right input
@@ -41,22 +44,39 @@ windowtype=-1;
 fftidx=-1;
 old_itu = 0;
 
-histsize=max_fft_size + (max_fft_size*0.5 - 1);
-window=histsize;
-fftworkspace=window+(max_fft_size*0.5 + 1);
+// New: limit RMS history frames to a safe number to avoid JSFX memory overflow
+max_rms_frames = 50; // Increased from 20 for better averaging
+
+// Initialize RMS control variables
+rms_frames_to_avg = 1;
+rms_write_pos = 0;
+rms_frames_stored = 0;
+
+// --- Memory layout (safe, minimal) ---
+// keep original history size calculation (works and keeps recpos simple)
+histsize = max_fft_size + (max_fft_size*0.5 - 1);
+window = histsize;
+
+// Original-style fft workspace placement (first large working area)
+fftworkspace = window + (max_fft_size*0.5 + 1);
 integrate_buf = fftworkspace + max_fft_size*2;
+
 // secondary workspace and buffers for derived stream ((L+R)-(L-R)) overlay
 fftworkspace2 = integrate_buf + max_fft_size*2;
 integrate_buf2 = fftworkspace2 + max_fft_size*2;
+
 // separate circular history for derived stream placed after integrate_buf2
 recpos2_offset = integrate_buf2 + max_fft_size*2;
 recpos2 = recpos2_offset;
 
 // temporary buffer for magnitude calculations
-mag_buf_temp = recpos2_offset + histsize;
+mag_buf_temp = recpos2_offset + histsize;      
+rms_buf_main = mag_buf_temp + (max_fft_size * 0.5);   // only num_bins!
+rms_buf_derived = rms_buf_main + ( (max_fft_size * 0.5) * max_rms_frames );
 
-// ITU-R 468 weighting filter state variables
-itu_filter_mem = mag_buf_temp + max_fft_size;
+// ITU-R 468 weighting filter state variables – placed after RMS buffer end
+itu_filter_mem = rms_buf_derived + (max_fft_size/2 * max_rms_frames);
+
 // States for L channel (6 total: 2 per section)
 itu_z_l0_u1 = itu_filter_mem;     // section 0, u[n-1]
 itu_z_l0_u2 = itu_z_l0_u1 + 1;    // section 0, u[n-2]
@@ -92,10 +112,39 @@ sos2_b2 = -0.99922155;
 sos2_a1 = -0.58162359;
 sos2_a2 = 0.57828378;
 
-// Init states to 0
+// Init ITU states to 0
 loop(12,
   itu_filter_mem[i] = 0;
   i += 1;
+);
+
+// compute_rms_magnitude: stores and averages amplitude values (not power)
+// compute_rms_magnitude: stores and averages POWER and returns TRUE RMS value
+function compute_rms_magnitude(bin_idx, current_mag, is_derived)
+  local(sum, frame, read_idx, rms_buf_base, num_bins, actual_frames)
+(
+  rms_buf_base = is_derived ? rms_buf_derived : rms_buf_main;
+  num_bins = fftsize * 0.5;
+
+  // Store instantaneous POWER (magnitude squared) into circular buffer
+  bin_offset = rms_write_pos * num_bins + bin_idx;
+  rms_buf_base[bin_offset] = sqr(current_mag);
+
+  // Sum power over required frames
+  sum = 0;
+  frame = 0;
+  actual_frames = min(rms_frames_to_avg, rms_frames_stored + 1);
+
+  loop(actual_frames,
+    read_idx = rms_write_pos - frame;
+    read_idx < 0 ? read_idx += max_rms_frames;
+    bin_offset = read_idx * num_bins + bin_idx;
+    sum += rms_buf_base[bin_offset];
+    frame += 1;
+  );
+
+  // Compute mean power and return sqrt -> true RMS magnitude
+  sqrt( sum / max(actual_frames, 1) );
 );
 
 
@@ -108,8 +157,15 @@ slider9 != old_itu ? (
     i += 1;
   );
 );
+slider10 != old_rms ? (
+  old_rms = slider10;
+  rms_frames_stored = 0;
+  rms_write_pos = 0;
+);
 
 @block
+
+// RMS calculation moved to @gfx where fftsize is current
 slider2 != lfloor ? (
   lfloor = slider2;
   minvol=2*exp(log(10)/20*slider2);
@@ -326,6 +382,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
   sprintf(#menustr,"%s|%sShow mid/side",#menustr,slider8>.5?"!":"");
   
   sprintf(#menustr,"%s|%sITU weighting",#menustr,slider9>.5?"!":"");
+  
+  sprintf(#menustr,"%s|%sRMS mode",#menustr,slider10>.5?"!":"");
     
  ret = gfx_showmenu(#menustr);
   ret > 0 ? (
@@ -333,7 +391,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     (ret-=12) < 4 ? (slider4 = ret; slider_automate(slider4); ):
     (ret-=4) == 0 ? (slider3 = !slider3; old_w=0; slider_automate(slider3); ) :
     (ret-=1) == 0 ? (slider8 = !slider8; old_w=0; slider_automate(slider8); ) :
-    (ret-=1) == 0 ? (slider9 = !slider9; old_w=0; slider_automate(slider9); );
+    (ret-=1) == 0 ? (slider9 = !slider9; old_w=0; slider_automate(slider9); ) :
+    (ret-=1) == 0 ? (slider10 = !slider10; old_w=0; slider_automate(slider10); );
     
   );
   update=1;
@@ -412,6 +471,7 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
   sprintf(#floorstr,"%s%.1fdB",gfx_w<420?"":"floor: ",slider2);
   sprintf(#intstr,"%s: %dms",gfx_w<420 ? "int" : "integrate", slider5|0);
   sprintf(#slopestr,"%s%.1fdB/oct",gfx_w<420?"":"slope: ",floor(slider6*10+0.5)/10);
+  sprintf(#rmsstr,"%sRMS: %dms",gfx_w<420?"":"",slider11|0); // RMS button label
   rowpos = gfx_w<700?gfx_texth+8:0;
   rowpos > 0 ? (
     phase_button.draw_button(gfx_x-8,0, slider3?"phase on" : "phase off");
@@ -421,6 +481,7 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
   floor_button.draw_button(gfx_x,rowpos,#floorstr);
   slope_button.draw_button(gfx_x-8,rowpos, #slopestr);
   integrate_button.draw_button(gfx_x-8,rowpos, #intstr);
+  rms_button.draw_button(gfx_x-8,rowpos, slider10>.5 ? #rmsstr : "RMS off"); // Add RMS button
   rowpos <= 0 ? phase_button.draw_button(gfx_x-8,rowpos, slider3?"phase on" : "phase off");
 );
 
@@ -438,12 +499,6 @@ update ? (
     integrate_lastt = integrate_now;
   ) : (
     integrate_en = 0;
-  );
-
-  fftidx != (slider1|0) ? (
-    fftidx=slider1|0;
-    fftsize=2^(min(max(fftidx,0),11)+4);
-    integrate_sc=1;
   );
 
   windowsize != fftsize || windowtype != (slider4|0) ? (
@@ -465,6 +520,20 @@ update ? (
     integrate_sc=1;
   );
 
+  fftidx != (slider1|0) ? (
+    fftidx=slider1|0;
+    fftsize=2^(min(max(fftidx,0),11)+4);
+    integrate_sc=1;
+  );
+
+  // FIX: Calculate RMS frames after fftsize is known
+  slider10 > 0.5 ? (
+    frame_duration_ms = (fftsize / srate) * 1000.0;
+    rms_frames_to_avg = max(floor(slider11 / frame_duration_ms) + 1, 5);
+    max_reasonable_frames = floor(1000 / frame_duration_ms);
+    rms_frames_to_avg = min(rms_frames_to_avg, max_rms_frames);
+    rms_frames_to_avg = min(rms_frames_to_avg, max_reasonable_frames);
+  );
 
   buf1=recpos-fftsize;
   buf1<0 ? buf1+=histsize;
@@ -491,6 +560,7 @@ update ? (
   ascale=gfx_h/$pi*0.25;
   xscale=800/(fftsize-4);
 
+  // Phase drawing (unchanged)
   buf3=fftworkspace;
   buf2=integrate_buf+max_fft_size*0.5;
   i=0;
@@ -498,35 +568,43 @@ update ? (
   slider3 ? loop(fftsize*0.5,
     ang=-atan2(buf3[1],buf3[]);
     buf3+=2;
-    
     integrate_en ? (
       ang = buf2[] += integrate_sc * (ang - buf2[]);
       buf2+=1;
     );
-    
-
     ty2=ang*ascale + gfx_h*0.5;
     tx = log(1.0+i*xscale)*wsc;
-
-    i ? 
-    ( 
-      gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1;
-      gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1) ;
-    );
-
+    i ? ( gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1; gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1) );
     lx=tx; ly2=ty2;
     i+=1;
-  );  
-  
-  // Compute magnitudes for all bins first
+  );
+
+  // Compute magnitudes for all bins first and apply RMS if enabled
   buf3=fftworkspace;
   i=0;
   loop(fftsize*0.5,
-    mag_buf_temp[i] = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+    // Get amplitude directly (not squared)
+    mag = sqrt(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+
+    slider10 > 0.5 ? (
+      // Average the amplitude, then square back to power for dB calculation
+      rms_mag = compute_rms_magnitude(i, mag, 0);
+      // Convert spectral RMS to time-domain RMS-equivalent (-3.01 dB on pure sine)
+      mag = rms_mag * 0.7071067811865476;
+    );
+
+    // Convert to power for dB display
+    mag_buf_temp[i] = log(sqr(mag));
     buf3+=2;
     i+=1;
   );
-  
+
+  // advance circular RMS write pointer and stored count (clamped to safe max)
+  slider10 > 0.5 ? (
+    rms_write_pos = (rms_write_pos + 1) % max_rms_frames;
+    rms_frames_stored = min(rms_frames_stored + 1, max_rms_frames);
+  );
+
   buf2=integrate_buf;
   lx=0;
   i=0;
@@ -534,7 +612,7 @@ update ? (
   fill_slast=0;
   octavegain = floor(slider6*10+0.5) * ((log(10)*2.0/10.0)/(log(2)*20.0));
   octavegainoffs = log(1 + slider7 * fftsize / srate);
-  
+
   loop(fftsize*0.5,   
     ty = mag_buf_temp[i];
     octavegain > 0 ? (
@@ -545,7 +623,7 @@ update ? (
       ty = buf2[] += integrate_sc * (ty - buf2[]);
       buf2 += 1;
     );
-    
+
     ty = ty*-0.5*sc + 20;
     tx = log(1.0 + i * xscale) * wsc;
 
@@ -609,7 +687,17 @@ update ? (
   buf3=fftworkspace2;
   i=0;
   loop(fftsize*0.5,
-    mag_buf_temp[i] = log(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+    // Get amplitude directly
+    mag = sqrt(max(sqr(buf3[0])+sqr(buf3[1]),(10^(-500/20*2))));
+    
+    slider10 > 0.5 ? (
+      // Average amplitude for derived stream
+      rms_mag = compute_rms_magnitude(i, mag, 1);
+      // Convert spectral RMS to time-domain RMS-equivalent (-3.01 dB on pure sine)
+      mag = rms_mag * 0.7071067811865476;
+    );
+    
+    mag_buf_temp[i] = log(sqr(mag));
     buf3+=2;
     i+=1;
   );
@@ -619,7 +707,7 @@ update ? (
   lx=0;
   i=0;
   gfx_r=1; gfx_g=0; gfx_b=0; // red overlay
-  gfx_a=0.45; // overlay opacity (65%)
+  gfx_a=0.45; // overlay opacity (45%)
   loop(fftsize*0.5,
     ty = mag_buf_temp[i];
     octavegain > 0 ? (
@@ -646,6 +734,5 @@ update ? (
     ); // end slider8 > 0.5 conditional
 
     );
-
 
 ;
