@@ -1,12 +1,13 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.3
+version: 1.4
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
-changelog: added RMS mode
+    - Normalisation mode
+changelog: added normalisation mode
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -27,6 +28,7 @@ slider8:0<0,1,1{original,mid/side}>-show mid/side
 slider9:0<0,1,1{disabled,enabled}>-itu weighting
 slider10:0<0,1,1{disabled,enabled}>-rms mode
 slider11:300<50,1000,10>-rms window (ms)
+slider12:0<0,1,1{disabled,enabled}>-normalise display   // NEW: normalisation toggle
 
 in_pin:left input
 in_pin:right input
@@ -44,6 +46,10 @@ windowtype=-1;
 fftidx=-1;
 old_itu = 0;
 
+// NEW: UI button objects for RMS and Normalise (fix: clickable)
+rms_button = 0;          // NEW
+normalize_button = 0;    // NEW
+
 // New: limit RMS history frames to a safe number to avoid JSFX memory overflow
 max_rms_frames = 50; // Increased from 20 for better averaging
 
@@ -51,6 +57,12 @@ max_rms_frames = 50; // Increased from 20 for better averaging
 rms_frames_to_avg = 1;
 rms_write_pos = 0;
 rms_frames_stored = 0;
+
+// Normalisation state variables
+norm_ref = 0;            // smoothed applied normalisation (dB)
+norm_offset_hold = 0;    // latched offset used when peak drops below threshold (dB)
+norm_smooth = 1;      // smoothing coefficient (tweak to taste)
+old_norm = 0;            // track slider12 changes
 
 // --- Memory layout (safe, minimal) ---
 // keep original history size calculation (works and keeps recpos simple)
@@ -161,6 +173,19 @@ slider10 != old_rms ? (
   old_rms = slider10;
   rms_frames_stored = 0;
   rms_write_pos = 0;
+);
+// NEW: handle normalise toggle changes so disabling resets state
+slider12 != old_norm ? (
+    old_norm = slider12;
+
+    slider12 < 0.5 ? (
+        // Turning OFF normalisation
+        norm_ref = 0;
+        norm_offset_hold = 0;
+    ) : (
+        // Turning ON normalisation
+        norm_ref = norm_ref;  // no-op required
+    );
 );
 
 @block
@@ -384,7 +409,9 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
   sprintf(#menustr,"%s|%sITU weighting",#menustr,slider9>.5?"!":"");
   
   sprintf(#menustr,"%s|%sRMS mode",#menustr,slider10>.5?"!":"");
-    
+  
+  sprintf(#menustr,"%s|%sNormalise display",#menustr,slider12>.5?"!":""); // NEW: menu item
+  
  ret = gfx_showmenu(#menustr);
   ret > 0 ? (
     (ret-=1) < 12 ? (slider1 = ret; slider_automate(slider1); ):
@@ -392,7 +419,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     (ret-=4) == 0 ? (slider3 = !slider3; old_w=0; slider_automate(slider3); ) :
     (ret-=1) == 0 ? (slider8 = !slider8; old_w=0; slider_automate(slider8); ) :
     (ret-=1) == 0 ? (slider9 = !slider9; old_w=0; slider_automate(slider9); ) :
-    (ret-=1) == 0 ? (slider10 = !slider10; old_w=0; slider_automate(slider10); );
+    (ret-=1) == 0 ? (slider10 = !slider10; old_w=0; slider_automate(slider10); ) :
+    (ret-=1) == 0 ? (slider12 = !slider12; old_w=0; slider_automate(slider12); ); // NEW: toggle normalise from menu
     
   );
   update=1;
@@ -472,6 +500,7 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
   sprintf(#intstr,"%s: %dms",gfx_w<420 ? "int" : "integrate", slider5|0);
   sprintf(#slopestr,"%s%.1fdB/oct",gfx_w<420?"":"slope: ",floor(slider6*10+0.5)/10);
   sprintf(#rmsstr,"%sRMS: %dms",gfx_w<420?"":"",slider11|0); // RMS button label
+  sprintf(#normstr,"%sNormalise",gfx_w<420?"":""); // FIXED: don't pass extra arg
   rowpos = gfx_w<700?gfx_texth+8:0;
   rowpos > 0 ? (
     phase_button.draw_button(gfx_x-8,0, slider3?"phase on" : "phase off");
@@ -481,7 +510,8 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
   floor_button.draw_button(gfx_x,rowpos,#floorstr);
   slope_button.draw_button(gfx_x-8,rowpos, #slopestr);
   integrate_button.draw_button(gfx_x-8,rowpos, #intstr);
-  rms_button.draw_button(gfx_x-8,rowpos, slider10>.5 ? #rmsstr : "RMS off"); // Add RMS button
+  rms_button.draw_button(gfx_x-8,rowpos, slider10>.5 ? #rmsstr : "RMS off"); // Add RMS button (clickable)
+  normalize_button.draw_button(gfx_x-8,rowpos, slider12>.5 ? "Normalise on" : "Normalise off"); // NEW: normalise UI button (clickable)
   rowpos <= 0 ? phase_button.draw_button(gfx_x-8,rowpos, slider3?"phase on" : "phase off");
 );
 
@@ -593,7 +623,7 @@ update ? (
       mag = rms_mag * 0.7071067811865476;
     );
 
-    // Convert to power for dB display
+    // Convert to power for dB display (ln(power) stored)
     mag_buf_temp[i] = log(sqr(mag));
     buf3+=2;
     i+=1;
@@ -604,6 +634,62 @@ update ? (
     rms_write_pos = (rms_write_pos + 1) % max_rms_frames;
     rms_frames_stored = min(rms_frames_stored + 1, max_rms_frames);
   );
+
+  // --- NEW: Normalisation (peak-based) ---
+  // mag_buf_temp currently holds ln(power) for each bin.
+  // We'll compute peak in dB, decide target normalisation, smooth, and apply.
+  // Ensure initial values are defined explicitly (avoid shorthand)
+  norm_ref = norm_ref ? norm_ref : 0;
+  norm_offset_hold = norm_offset_hold ? norm_offset_hold : 0;
+  // smoothing coefficient already set in @init; tweak norm_smooth if needed
+
+  // find peak in dB
+  peak_db = -1000;
+  i=0;
+  // conversion factor ln(power) -> dB: Kdb = 10 / ln(10)
+  Kdb = 10 / log(10);
+  loop(fftsize*0.5,
+    dbi = mag_buf_temp[i] * Kdb;
+    dbi > peak_db ? peak_db = dbi;
+    i += 1;
+  );
+
+// determine normalisation behaviour
+normalise_threshold = -75.0;
+
+slider12 > 0.5 ? (
+
+    // normalisation feature enabled
+    peak_db > normalise_threshold ? (
+        // normal operation: follow peak
+        norm_target = peak_db;
+        norm_offset_hold = norm_target; // update latch
+    ) : (
+        // peak below threshold: freeze offset so spectrum continues
+        norm_target = norm_offset_hold;
+    );
+
+) : (
+
+    // normalisation disabled: natural mode
+    norm_target = 0;
+    norm_offset_hold = 0;
+
+);
+
+  // smooth the applied normalisation
+  norm_ref += norm_smooth * (norm_target - norm_ref);
+
+  // convert norm_ref (dB) back to ln(power) domain for subtraction
+  ln_offset = norm_ref * (log(10) / 10);
+
+  // apply subtraction to main mag buffer (ln(power) domain)
+  i=0;
+  loop(fftsize*0.5,
+    mag_buf_temp[i] -= ln_offset;
+    i += 1;
+  );
+  // --- END NEW: Normalisation ---
 
   buf2=integrate_buf;
   lx=0;
@@ -697,7 +783,13 @@ update ? (
       mag = rms_mag * 0.7071067811865476;
     );
     
+    // store ln(power)
     mag_buf_temp[i] = log(sqr(mag));
+
+    // --- NEW: apply same normalisation offset to derived stream so side graph matches main ---
+    mag_buf_temp[i] -= ln_offset;
+    // --- END NEW ---
+
     buf3+=2;
     i+=1;
   );
@@ -735,4 +827,4 @@ update ? (
 
     );
 
-;
+; 
