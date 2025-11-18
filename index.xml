@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="6e5f7735382ecd14d2171c22958d1e37f48b1450">
+<index version="1" name="7thResonance" commit="b9a20d94a6d26b8cf62372a4c0b606a0ba808e35">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -69,7 +69,9 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 modded version of the cockos spectrum analyser.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Added Sides graph (red)\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Main graph is blue\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Main (sum) graph is blue\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab RMS mode\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab ITU-R 468 weighting mode\sa180\par}
 }
 ]]></description>
       </metadata>
@@ -84,6 +86,10 @@
         <changelog><![CDATA[added right click menu to enable/disable side channel spectrum
 added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/6e5f7735382ecd14d2171c22958d1e37f48b1450/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
+      </version>
+      <version name="1.3" author="7thResonance" time="2025-11-18T07:20:24Z">
+        <changelog><![CDATA[added RMS mode]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/b9a20d94a6d26b8cf62372a4c0b606a0ba808e35/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Tubify.jsfx" type="effect" desc="7R Tubify (Multiband Saturator)">
