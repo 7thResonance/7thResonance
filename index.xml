@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="29dc83ed1ba5891e45c8afc005de1ccc78cc6d03">
+<index version="1" name="7thResonance" commit="bce685e101aaa476b4d2d82d4edfd867cf111fcb">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -263,13 +263,17 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Intented to use with collapes folders. Hides the atumation from the folder.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Intented to use with colcollapsed folders. Hides the automation from the folder. Autocollapse mode when height is below threshold. Set these values at the top of the script. autoCollapse = 0, change to 1 to enable autocollapse.\par}
 }
 ]]></description>
         <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-11-25T09:27:56Z">
         <source main="main">https://github.com/7thResonance/7thResonance/raw/29dc83ed1ba5891e45c8afc005de1ccc78cc6d03/Utilities/7R%20Hide%20Envelopes%20of%20Folder%20track%20when%20collapsed.lua</source>
+      </version>
+      <version name="1.1" author="7thResonance" time="2025-11-29T18:18:52Z">
+        <changelog><![CDATA[- Autocollapse mode. (disabled by default)]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/bce685e101aaa476b4d2d82d4edfd867cf111fcb/Utilities/7R%20Hide%20Envelopes%20of%20Folder%20track%20when%20collapsed.lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert FX or Instruments or Track Template Under Mouse cursor (Track or Item, Master).lua" type="script" desc="7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)">
