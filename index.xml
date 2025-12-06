@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="bce685e101aaa476b4d2d82d4edfd867cf111fcb">
+<index version="1" name="7thResonance" commit="878edb6251f350dae30a9568325f36486fc50852">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -168,6 +168,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <changelog><![CDATA[added pause to work with the GUI send manager script
 - Added send pan control syncing]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/33465f03a897c16472d4edad015ad130e77bc28d/Track/7R%20Control%20Sends%20of%20Selected%20Track.lua</source>
+      </version>
+      <version name="1.3" author="7thResonance" time="2025-12-06T07:38:10Z">
+        <changelog><![CDATA[Multiple sends to the same track bug is fixed. Controls each slot respectevely.]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/878edb6251f350dae30a9568325f36486fc50852/Track/7R%20Control%20Sends%20of%20Selected%20Track.lua</source>
       </version>
     </reapack>
     <reapack name="7R Freeze Instruments to Stereo (Other FX Online).lua" type="script" desc="7R Freeze Instruments to Stereo (Other FX Online)">
