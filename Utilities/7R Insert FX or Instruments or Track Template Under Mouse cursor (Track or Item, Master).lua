@@ -1,14 +1,13 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.3
-@changelog - fixed esc not working properly
+@version 3.4
+@changelog - Added option to add FX to all selected tracks/items
 @donation https://paypal.me/7thresonance
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
     - Settings for basic options
-
     - Requires JS ReaScript and Imgui
 @screenshot https://i.postimg.cc/DyqgzknJ/Screenshot-2025-07-11-062605.png
     https://i.postimg.cc/3JM17J5Q/Screenshot-2025-07-11-062614.png
@@ -1192,6 +1191,7 @@ settings.last_left_value      = settings.last_left_value      ~= nil and setting
 settings.use_tree_view       = settings.use_tree_view       ~= nil and settings.use_tree_view       or false -- false = two-pane, true = single-pane tree view
 settings.font_size           = settings.font_size           ~= nil and settings.font_size           or 11
 settings.disable_mouse_target = settings.disable_mouse_target ~= nil and settings.disable_mouse_target or false
+settings.apply_to_all_selected = settings.apply_to_all_selected ~= nil and settings.apply_to_all_selected or false
 -- Remember which tree nodes were open in single-pane mode
 settings.expanded_nodes = settings.expanded_nodes or {}
 
@@ -1216,6 +1216,7 @@ local function save_settings()
     f:write("  ,use_tree_view = " .. tostring(settings.use_tree_view) .. "\n")
     f:write("  ,font_size = " .. tostring(settings.font_size) .. "\n")
     f:write("  ,disable_mouse_target = " .. tostring(settings.disable_mouse_target) .. "\n")
+    f:write("  ,apply_to_all_selected = " .. tostring(settings.apply_to_all_selected) .. "\n")
         -- Serialize expanded_nodes table (only save true entries to keep file small)
         f:write("  ,expanded_nodes = {\n")
         for k, v in pairs(settings.expanded_nodes or {}) do
@@ -1247,6 +1248,7 @@ local function load_settings()
             if tbl.use_tree_view ~= nil then settings.use_tree_view = tbl.use_tree_view end
             if tbl.font_size ~= nil then settings.font_size = tbl.font_size end
             if tbl.disable_mouse_target ~= nil then settings.disable_mouse_target = tbl.disable_mouse_target end
+            if tbl.apply_to_all_selected ~= nil then settings.apply_to_all_selected = tbl.apply_to_all_selected end
             if tbl.expanded_nodes ~= nil and type(tbl.expanded_nodes) == 'table' then settings.expanded_nodes = tbl.expanded_nodes end
   end
 end
@@ -1395,49 +1397,84 @@ local function insert_fx(fx_name)
             created_new_track = true
         end
     else
-        if insert_mode == "track" and target_track then
-            local function is_file_entry(s)
-                if type(s) ~= 'string' then return false end
-                if s:match("%.RfxChain$") or s:match("%.RTrackTemplate$") then return true end
-                if s:find(os_separator, 1, true) then return true end
-                return false
+        -- Determine targets
+        local targets = {}
+        local apply_to_all = settings.apply_to_all_selected
+        if apply_to_all then
+            if insert_mode == "track" or insert_mode == "master" then
+                local num_sel = reaper.CountSelectedTracks(0)
+                if num_sel > 3 then
+                    local msg = "You have " .. num_sel .. " selected tracks. Are you sure you want to add FX to all of them?"
+                    local ret = reaper.ShowMessageBox(msg, "Warning", 4) -- 4 = Yes/No
+                    if ret ~= 6 then return false end -- 6 = Yes
+                end
+                for i = 0, num_sel - 1 do
+                    targets[#targets + 1] = {type = "track", obj = reaper.GetSelectedTrack(0, i)}
+                end
+            elseif insert_mode == "item" then
+                local num_sel = reaper.CountSelectedMediaItems(0)
+                if num_sel > 3 then
+                    local msg = "You have " .. num_sel .. " selected items. Are you sure you want to add FX to all of them?"
+                    local ret = reaper.ShowMessageBox(msg, "Warning", 4)
+                    if ret ~= 6 then return false end
+                end
+                for i = 0, num_sel - 1 do
+                    targets[#targets + 1] = {type = "item", obj = reaper.GetSelectedMediaItem(0, i)}
+                end
             end
-            local want_instantiate = is_file_entry(fx_to_add)
-            fx_index = reaper.TrackFX_AddByName(target_track, fx_to_add, want_instantiate, -1)
-            if fx_index == -1 and want_instantiate then fx_index = reaper.TrackFX_AddByName(target_track, fx_to_add, false, -1) end
-        elseif insert_mode == "master" and target_track then
-            local function is_file_entry_master(s)
-                if type(s) ~= 'string' then return false end
-                if s:match("%.RfxChain$") or s:match("%.RTrackTemplate$") then return true end
-                if s:find(os_separator, 1, true) then return true end
-                return false
-            end
-            local want_instantiate_master = is_file_entry_master(fx_to_add)
-            fx_index = reaper.TrackFX_AddByName(target_track, fx_to_add, want_instantiate_master, -1)
-            if fx_index == -1 and want_instantiate_master then fx_index = reaper.TrackFX_AddByName(target_track, fx_to_add, false, -1) end
-        elseif insert_mode == "item" and target_item then
-            local take = reaper.GetActiveTake(target_item)
-            if take then
-                fx_index = reaper.TakeFX_AddByName(take, fx_to_add, -1)
+        else
+            -- Single target
+            if insert_mode == "track" or insert_mode == "master" then
+                targets = {{type = "track", obj = target_track}}
+            elseif insert_mode == "item" then
+                targets = {{type = "item", obj = target_item}}
             end
         end
-    end
 
-    if fx_index > -1 then
-        if settings.fx_window_mode == 1 then
-            if insert_mode == "item" then
-                reaper.TakeFX_Show(reaper.GetActiveTake(target_item), fx_index, 3)
-            else
-                reaper.TrackFX_Show(target_track, fx_index, 3)
+        -- Add FX to each target
+        local success_count = 0
+        for _, target in ipairs(targets) do
+            local fx_index = -1
+            if target.type == "track" then
+                local function is_file_entry(s)
+                    if type(s) ~= 'string' then return false end
+                    if s:match("%.RfxChain$") or s:match("%.RTrackTemplate$") then return true end
+                    if s:find(os_separator, 1, true) then return true end
+                    return false
+                end
+                local want_instantiate = is_file_entry(fx_to_add)
+                fx_index = reaper.TrackFX_AddByName(target.obj, fx_to_add, want_instantiate, -1)
+                if fx_index == -1 and want_instantiate then fx_index = reaper.TrackFX_AddByName(target.obj, fx_to_add, false, -1) end
+            elseif target.type == "item" then
+                local take = reaper.GetActiveTake(target.obj)
+                if take then
+                    fx_index = reaper.TakeFX_AddByName(take, fx_to_add, -1)
+                end
             end
-        elseif settings.fx_window_mode == 2 then
-            if insert_mode == "item" then
-                reaper.TakeFX_Show(reaper.GetActiveTake(target_item), fx_index, 1)
-            else
-                reaper.TrackFX_Show(target_track, fx_index, 1)
+            if fx_index > -1 then
+                success_count = success_count + 1
+                -- Open window only for the first successful insertion
+                if success_count == 1 then
+                    if settings.fx_window_mode == 1 then
+                        if target.type == "item" then
+                            reaper.TakeFX_Show(reaper.GetActiveTake(target.obj), fx_index, 3)
+                        else
+                            reaper.TrackFX_Show(target.obj, fx_index, 3)
+                        end
+                    elseif settings.fx_window_mode == 2 then
+                        if target.type == "item" then
+                            reaper.TakeFX_Show(reaper.GetActiveTake(target.obj), fx_index, 1)
+                        else
+                            reaper.TrackFX_Show(target.obj, fx_index, 1)
+                        end
+                    end
+                end
             end
         end
-        return true
+
+        if success_count > 0 then
+            return true
+        end
     end
     -- If insertion failed and it was an FX chain, show diagnostic info
     if fx_name and type(fx_name) == 'string' and fx_name:match("%.RfxChain$") then
@@ -2141,6 +2178,16 @@ local function draw_settings_window()
         end
         if reaper.ImGui_IsItemHovered(ctx) then
             reaper.ImGui_SetTooltip(ctx, "When enabled the script will not detect the track/item under the mouse. Useful when opening docked.")
+        end
+
+        reaper.ImGui_Spacing(ctx)
+        local changed_as, new_as = reaper.ImGui_Checkbox(ctx, "Apply FX to all selected tracks/items", settings.apply_to_all_selected)
+        if changed_as then
+            settings.apply_to_all_selected = new_as
+            save_settings()
+        end
+        if reaper.ImGui_IsItemHovered(ctx) then
+            reaper.ImGui_SetTooltip(ctx, "When enabled, applies the FX to all selected tracks or items instead of just the one under the mouse.")
         end
 
         reaper.ImGui_Spacing(ctx)
