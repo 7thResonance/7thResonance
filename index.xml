@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="878edb6251f350dae30a9568325f36486fc50852">
+<index version="1" name="7thResonance" commit="d319050b719591ba02c011fbbb2e2a4eef6116eb">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -287,10 +287,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 Opens GUI for track, item or master under cursor with GUI to select FX\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Saves position and size of GUI\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Cache for quick search. Updates when new plugins are installed\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Settings for basic options\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Requires JS ReaScript and Imgui\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Saves position and size of GUI\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Cache for quick search. Updates when new plugins are installed\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Settings for basic options\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Requires JS ReaScript and Imgui\sa180\par}
 }
 ]]></description>
         <link rel="screenshot">https://i.postimg.cc/DyqgzknJ/Screenshot-2025-07-11-062605.png</link>
@@ -317,6 +317,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="3.3" author="7thResonance" time="2025-09-30T13:04:12Z">
         <changelog><![CDATA[- fixed esc not working properly]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/1594458508a5da097e5eba196cc60c7695586ff4/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
+      </version>
+      <version name="3.4" author="7thResonance" time="2026-01-03T17:22:23Z">
+        <changelog><![CDATA[- Added option to add FX to all selected tracks/items]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/d319050b719591ba02c011fbbb2e2a4eef6116eb/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert Instrument (Respecting Folders).lua" type="script" desc="7R Insert Instrument (Respecting Folders)">
