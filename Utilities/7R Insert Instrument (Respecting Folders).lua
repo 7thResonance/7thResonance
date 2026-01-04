@@ -1,9 +1,10 @@
 --[[
 @description 7R Insert Instrument (Respecting Folders)
 @author 7thResonance
-@version 1.3
+@version 1.4
 @changelog
-     - Added file check for cache rebuild.
+     - Added "remeber last search term" setting
+     - Font size setting
 @donation https://paypal.me/7thresonance
 @about Original Folder Respect logic is by Aaron Cendan (Insert New Track Respect Folders)
   Uses that logic to insert instrument at the start,middle, or end of folders.
@@ -17,8 +18,21 @@ if not reaper.ImGui_CreateContext then
   return
 end
 
+-- SETTINGS (defaults)
+local settings = {
+  window_x = -1,
+  window_y = -1,
+  window_width = 600,
+  window_height = 400,
+  auto_close_on_insert = true,
+  hide_vst2_duplicates = true,
+  remember_last_search_term = false,
+  last_search_text = "",
+  font_size = 14
+}
+
 local ctx = reaper.ImGui_CreateContext("Instrument Insert")
-local font = reaper.ImGui_CreateFont('sans-serif', 14)
+local font = reaper.ImGui_CreateFont('sans-serif', settings.font_size)
 reaper.ImGui_Attach(ctx, font)
 
 -- SCRIPT PATH AND CACHE FILES
@@ -157,21 +171,12 @@ local instrument_list = {}
 local filtered_instruments = {}
 local selected_instrument = nil
 local selected_index = 1
+local settings_window_open = false
 
 -- Add string trim function
 string.trim = string.trim or function(s)
   return s:match("^%s*(.-)%s*$")
 end
-
--- SETTINGS
-local settings = {
-  window_x = -1,
-  window_y = -1,
-  window_width = 600,
-  window_height = 400,
-  auto_close_on_insert = true,
-  hide_vst2_duplicates = true
-}
 
 -- SETTINGS FILE FUNCTIONS
 local function get_settings_file_path()
@@ -191,7 +196,10 @@ local function save_settings()
     file:write("  window_width = " .. tostring(settings.window_width) .. ",\n")
     file:write("  window_height = " .. tostring(settings.window_height) .. ",\n")
     file:write("  auto_close_on_insert = " .. tostring(settings.auto_close_on_insert) .. ",\n")
-    file:write("  hide_vst2_duplicates = " .. tostring(settings.hide_vst2_duplicates) .. "\n")
+    file:write("  hide_vst2_duplicates = " .. tostring(settings.hide_vst2_duplicates) .. ",\n")
+    file:write("  remember_last_search_term = " .. tostring(settings.remember_last_search_term) .. ",\n")
+    file:write("  last_search_text = " .. string.format("%q", settings.last_search_text) .. ",\n")
+    file:write("  font_size = " .. tostring(settings.font_size) .. "\n")
     file:write("}\n")
     file:close()
   end
@@ -228,6 +236,15 @@ local function load_settings()
     end
     if loaded_settings.hide_vst2_duplicates ~= nil then
       settings.hide_vst2_duplicates = loaded_settings.hide_vst2_duplicates
+    end
+    if loaded_settings.remember_last_search_term ~= nil then
+      settings.remember_last_search_term = loaded_settings.remember_last_search_term
+    end
+    if loaded_settings.last_search_text ~= nil then
+      settings.last_search_text = loaded_settings.last_search_text
+    end
+    if loaded_settings.font_size ~= nil then
+      settings.font_size = loaded_settings.font_size
     end
   end
 end
@@ -621,7 +638,10 @@ function draw_search_box()
   reaper.ImGui_Text(ctx, "Search Instruments:")
   reaper.ImGui_SameLine(ctx)
 
-  local input_flags = reaper.ImGui_InputTextFlags_CallbackAlways()
+  local flags = reaper.ImGui_InputTextFlags_CallbackAlways()
+  if reaper.ImGui_IsWindowAppearing(ctx) and settings.remember_last_search_term and search_text ~= "" then
+    flags = flags | reaper.ImGui_InputTextFlags_AutoSelectAll()
+  end
 
   if reaper.ImGui_IsWindowAppearing(ctx) then
     reaper.ImGui_SetKeyboardFocusHere(ctx)
@@ -629,11 +649,15 @@ function draw_search_box()
 
   -- Always maintain focus manually
   reaper.ImGui_PushID(ctx, "SearchBox")
-  local changed, new_text = reaper.ImGui_InputText(ctx, "##search", search_text, input_flags)
+  local changed, new_text = reaper.ImGui_InputText(ctx, "##search", search_text, flags)
   reaper.ImGui_PopID(ctx)
 
   if changed then
     search_text = new_text
+    if settings.remember_last_search_term then
+      settings.last_search_text = new_text
+      save_settings()
+    end
     filtered_instruments = filter_instruments(instrument_list, search_text)
     selected_index = 1
     selected_instrument = filtered_instruments[selected_index] or nil
@@ -721,12 +745,19 @@ function draw_status_bar()
   
   -- Buttons
   local available_width = reaper.ImGui_GetContentRegionAvail(ctx)
-  reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + available_width - 180)
+  reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + available_width - 250)
   
   -- Refresh button
   if reaper.ImGui_Button(ctx, "Refresh", 60, 25) then
     instrument_list = scan_instruments()
     filtered_instruments = filter_instruments(instrument_list, search_text)
+  end
+  
+  reaper.ImGui_SameLine(ctx)
+  
+  -- Settings button
+  if reaper.ImGui_Button(ctx, "Settings", 70, 25) then
+    settings_window_open = true
   end
   
   reaper.ImGui_SameLine(ctx)
@@ -755,6 +786,74 @@ function draw_status_bar()
   if reaper.ImGui_Button(ctx, "Close", 50, 25) then
     window_open = false
   end
+end
+
+function draw_settings_window()
+  if not settings_window_open then return end
+  local window_flags = reaper.ImGui_WindowFlags_AlwaysAutoResize()
+  local visible, open = reaper.ImGui_Begin(ctx, "Instrument Insert Settings", true, window_flags)
+  if visible then
+    -- Hide VST2 duplicates
+    local changed, new_val = reaper.ImGui_Checkbox(ctx, "Hide VST2 if VST3 is present", settings.hide_vst2_duplicates)
+    if changed then
+      settings.hide_vst2_duplicates = new_val
+      save_settings()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "When enabled, VST2 plugins are hidden if a VST3 version of the same plugin exists")
+    end
+
+    reaper.ImGui_Spacing(ctx)
+
+    -- Auto close on insert
+    local changed2, new_val2 = reaper.ImGui_Checkbox(ctx, "Autoclose window after insert", settings.auto_close_on_insert)
+    if changed2 then
+      settings.auto_close_on_insert = new_val2
+      save_settings()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "Close the browser automatically after inserting an instrument")
+    end
+
+    reaper.ImGui_Spacing(ctx)
+
+    -- Remember last search term
+    local changed3, new_val3 = reaper.ImGui_Checkbox(ctx, "Remember last search term", settings.remember_last_search_term)
+    if changed3 then
+      settings.remember_last_search_term = new_val3
+      save_settings()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "When enabled, the last search term is remembered and restored when reopening the script. The search box will be highlighted for easy editing.")
+    end
+
+    reaper.ImGui_Spacing(ctx)
+    -- Font size slider
+    reaper.ImGui_Text(ctx, "Font size:")
+    reaper.ImGui_SameLine(ctx)
+    local changed_font, new_font = reaper.ImGui_SliderInt(ctx, "##font_size", settings.font_size, 8, 20)
+    if changed_font then
+      settings.font_size = new_font
+      save_settings()
+      -- Recreate and attach font so changes take effect immediately
+      font = reaper.ImGui_CreateFont('sans-serif', settings.font_size)
+      reaper.ImGui_Attach(ctx, font)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "Set UI font size (8-20). Changes apply immediately.")
+    end
+
+    reaper.ImGui_Spacing(ctx)
+    reaper.ImGui_Separator(ctx)
+    reaper.ImGui_Spacing(ctx)
+
+    if reaper.ImGui_Button(ctx, "Close", 100, 26) then
+      settings_window_open = false
+    end
+
+    reaper.ImGui_End(ctx)
+  end
+  if not open then settings_window_open = false end
 end
 
 function draw_main_window()
@@ -791,6 +890,14 @@ end
 function init()
   -- Load settings first
   load_settings()
+
+  -- Recreate font using loaded font size
+  font = reaper.ImGui_CreateFont('sans-serif', settings.font_size)
+  reaper.ImGui_Attach(ctx, font)
+
+  if settings.remember_last_search_term then
+    search_text = settings.last_search_text or ""
+  end
 
   -- Attempt to read a cached FX list if present
   local fx_list_cached = nil
@@ -841,6 +948,12 @@ function init()
 
   filtered_instruments = instrument_list or {}
 
+  if search_text ~= "" then
+    filtered_instruments = filter_instruments(instrument_list, search_text)
+    selected_index = 1
+    selected_instrument = filtered_instruments[selected_index] or nil
+  end
+
   -- Focus search box
   reaper.ImGui_SetNextWindowFocus(ctx)
 end
@@ -850,8 +963,9 @@ function main_loop()
     return 
   end
   
-  reaper.ImGui_PushFont(ctx, font, 14)
+  reaper.ImGui_PushFont(ctx, font, settings.font_size)
   local gui_open = draw_main_window()
+  draw_settings_window()
   reaper.ImGui_PopFont(ctx)
   
   if not gui_open then

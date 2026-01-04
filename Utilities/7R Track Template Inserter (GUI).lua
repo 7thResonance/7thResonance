@@ -1,12 +1,13 @@
 --[[
 @description 7R Track Template Inserter (GUI)
 @author 7thResonance
-@version 1.2
+@version 1.3
 @about
   Browse and insert REAPER track templates organized in a tree structure
   matching the folder hierarchy in the TrackTemplates directory.
   Double-click to insert track templates into the current project.
-@changelog - Search and enter for quick insert
+@changelog - added font size setting
+           - remember last search term setting 
 @donation https://paypal.me/7thresonance
 @screenshot Window https://i.postimg.cc/Y25QbqXX/Screenshot-2025-07-12-213753.png
 --]]
@@ -43,7 +44,10 @@ local settings = {
   window_height = 500,
   auto_close_on_insert = true,
   show_file_paths = false,
-  templates_folder = ""
+  templates_folder = "",
+  remember_last_search_term = false,
+  last_search_text = "",
+  font_size = 14
 }
 
 -- SETTINGS FILE FUNCTIONS
@@ -67,7 +71,10 @@ local function save_settings()
     file:write("  show_file_paths = " .. tostring(settings.show_file_paths) .. ",\n")
     -- Escape backslashes in the templates_folder path
     local escaped_folder = (settings.templates_folder or ""):gsub("\\", "\\\\")
-    file:write("  templates_folder = \"" .. escaped_folder .. "\"\n")
+    file:write("  templates_folder = \"" .. escaped_folder .. "\",\n")
+    file:write("  remember_last_search_term = " .. tostring(settings.remember_last_search_term) .. ",\n")
+    file:write("  last_search_text = " .. string.format("%q", settings.last_search_text) .. ",\n")
+    file:write("  font_size = " .. tostring(settings.font_size) .. "\n")
     file:write("}\n")
     file:close()
   end
@@ -414,14 +421,22 @@ local function draw_search_box()
   reaper.ImGui_SameLine(ctx)
 
   -- Auto-focus when window appears
+  local flags = 0
+  if reaper.ImGui_IsWindowAppearing(ctx) and settings.remember_last_search_term and search_text ~= "" then
+    flags = reaper.ImGui_InputTextFlags_AutoSelectAll()
+  end
   if reaper.ImGui_IsWindowAppearing(ctx) then
     reaper.ImGui_SetKeyboardFocusHere(ctx)
   end
 
   -- Regular input: report changes on each keystroke
-  local changed, new_text = reaper.ImGui_InputText(ctx, "##search", search_text)
+  local changed, new_text = reaper.ImGui_InputText(ctx, "##search", search_text, flags)
   if changed then
     search_text = new_text
+    if settings.remember_last_search_term then
+      settings.last_search_text = new_text
+      save_settings()
+    end
     if search_text == "" then
       filtered_templates = template_tree
     else
@@ -621,6 +636,31 @@ local function draw_settings_section()
       settings.show_file_paths = new_show_paths
       save_settings()
     end
+
+    -- Remember last search term
+    local remember_changed, new_remember = reaper.ImGui_Checkbox(ctx, "Remember last search term", settings.remember_last_search_term)
+    if remember_changed then
+      settings.remember_last_search_term = new_remember
+      save_settings()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "When enabled, the last search term is remembered and restored when reopening the script. The search box will be highlighted for easy editing.")
+    end
+
+    -- Font size slider
+    reaper.ImGui_Text(ctx, "Font size:")
+    reaper.ImGui_SameLine(ctx)
+    local changed_font, new_font = reaper.ImGui_SliderInt(ctx, "##font_size", settings.font_size, 8, 20)
+    if changed_font then
+      settings.font_size = new_font
+      save_settings()
+      -- Recreate and attach font so changes take effect immediately
+      font = reaper.ImGui_CreateFont('sans-serif', settings.font_size)
+      reaper.ImGui_Attach(ctx, font)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+      reaper.ImGui_SetTooltip(ctx, "Set UI font size (8-20). Changes apply immediately.")
+    end
   end
 end
 
@@ -704,9 +744,26 @@ local function init()
   -- Load settings first
   load_settings()
 
+  -- Recreate font with loaded size
+  font = reaper.ImGui_CreateFont('sans-serif', settings.font_size)
+  reaper.ImGui_Attach(ctx, font)
+
+  if settings.remember_last_search_term then
+    search_text = settings.last_search_text or ""
+  end
+
   -- Scan for templates
   template_tree = scan_templates()
   filtered_templates = template_tree
+
+  if search_text ~= "" then
+    filtered_templates = filter_templates(template_tree, search_text)
+    -- Select first result
+    local results = flatten_templates(filtered_templates)
+    if #results > 0 then
+      selected_template = results[1]
+    end
+  end
 
   -- Focus search box
   reaper.ImGui_SetNextWindowFocus(ctx)
@@ -717,7 +774,7 @@ local function main_loop()
     return
   end
 
-  reaper.ImGui_PushFont(ctx, font, 14)
+  reaper.ImGui_PushFont(ctx, font, settings.font_size)
   local gui_open = draw_main_window()
   reaper.ImGui_PopFont(ctx)
 

@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.4
-@changelog - Added option to add FX to all selected tracks/items
+@version 3.5
+@changelog - Added "remeber last search term" setting
 @donation https://paypal.me/7thresonance
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
@@ -1192,6 +1192,8 @@ settings.use_tree_view       = settings.use_tree_view       ~= nil and settings.
 settings.font_size           = settings.font_size           ~= nil and settings.font_size           or 11
 settings.disable_mouse_target = settings.disable_mouse_target ~= nil and settings.disable_mouse_target or false
 settings.apply_to_all_selected = settings.apply_to_all_selected ~= nil and settings.apply_to_all_selected or false
+settings.remember_last_search_term = settings.remember_last_search_term ~= nil and settings.remember_last_search_term or false
+settings.last_search_text = settings.last_search_text or ""
 -- Remember which tree nodes were open in single-pane mode
 settings.expanded_nodes = settings.expanded_nodes or {}
 
@@ -1217,6 +1219,8 @@ local function save_settings()
     f:write("  ,font_size = " .. tostring(settings.font_size) .. "\n")
     f:write("  ,disable_mouse_target = " .. tostring(settings.disable_mouse_target) .. "\n")
     f:write("  ,apply_to_all_selected = " .. tostring(settings.apply_to_all_selected) .. "\n")
+    f:write("  ,remember_last_search_term = " .. tostring(settings.remember_last_search_term) .. "\n")
+    f:write("  ,last_search_text = " .. string.format("%q", settings.last_search_text or "") .. "\n")
         -- Serialize expanded_nodes table (only save true entries to keep file small)
         f:write("  ,expanded_nodes = {\n")
         for k, v in pairs(settings.expanded_nodes or {}) do
@@ -1249,6 +1253,8 @@ local function load_settings()
             if tbl.font_size ~= nil then settings.font_size = tbl.font_size end
             if tbl.disable_mouse_target ~= nil then settings.disable_mouse_target = tbl.disable_mouse_target end
             if tbl.apply_to_all_selected ~= nil then settings.apply_to_all_selected = tbl.apply_to_all_selected end
+            if tbl.remember_last_search_term ~= nil then settings.remember_last_search_term = tbl.remember_last_search_term end
+            if tbl.last_search_text ~= nil then settings.last_search_text = tbl.last_search_text end
             if tbl.expanded_nodes ~= nil and type(tbl.expanded_nodes) == 'table' then settings.expanded_nodes = tbl.expanded_nodes end
   end
 end
@@ -1747,13 +1753,21 @@ local function draw_main_gui()
 
     -- Top bar: Search + Settings
     -- Slightly reduce search width to accommodate Refresh + Settings buttons
+    local flags = 0
+    if reaper.ImGui_IsWindowAppearing(ctx) and settings.remember_last_search_term and search_text ~= "" then
+        flags = reaper.ImGui_InputTextFlags_AutoSelectAll()
+    end
     reaper.ImGui_SetNextItemWidth(ctx, reaper.ImGui_GetContentRegionAvail(ctx) - 180)
     if reaper.ImGui_IsWindowAppearing(ctx) then
         reaper.ImGui_SetKeyboardFocusHere(ctx)
     end
-    local changed_search, new_search = reaper.ImGui_InputTextWithHint(ctx, "##search", "Search FX...", search_text)
+    local changed_search, new_search = reaper.ImGui_InputTextWithHint(ctx, "##search", "Search FX...", search_text, flags)
     if changed_search then
         search_text = new_search
+        if settings.remember_last_search_term then
+            settings.last_search_text = new_search
+            save_settings()
+        end
         highlighted_fx_index = 1
         arrow_key_pressed = false
     end
@@ -2191,6 +2205,16 @@ local function draw_settings_window()
         end
 
         reaper.ImGui_Spacing(ctx)
+        local changed_rlst, new_rlst = reaper.ImGui_Checkbox(ctx, "Remember last search term", settings.remember_last_search_term)
+        if changed_rlst then
+            settings.remember_last_search_term = new_rlst
+            save_settings()
+        end
+        if reaper.ImGui_IsItemHovered(ctx) then
+            reaper.ImGui_SetTooltip(ctx, "When enabled, the last search term is remembered and restored when reopening the script. The search box will be highlighted for easy editing.")
+        end
+
+        reaper.ImGui_Spacing(ctx)
         reaper.ImGui_Separator(ctx)
         reaper.ImGui_Spacing(ctx)
 
@@ -2210,6 +2234,10 @@ end
 local function init()
     -- Load persisted settings first
     load_settings()
+
+    if settings.remember_last_search_term then
+        search_text = settings.last_search_text or ""
+    end
 
     -- Recreate fonts using loaded font size
     if font then
