@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="d319050b719591ba02c011fbbb2e2a4eef6116eb">
+<index version="1" name="7thResonance" commit="37eaebe39f270e6af5e9243a388bad7d5edbe0fb">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -322,6 +322,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <changelog><![CDATA[- Added option to add FX to all selected tracks/items]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/d319050b719591ba02c011fbbb2e2a4eef6116eb/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
       </version>
+      <version name="3.5" author="7thResonance" time="2026-01-04T08:20:08Z">
+        <changelog><![CDATA[- Added "remeber last search term" setting]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/37eaebe39f270e6af5e9243a388bad7d5edbe0fb/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
+      </version>
     </reapack>
     <reapack name="7R Insert Instrument (Respecting Folders).lua" type="script" desc="7R Insert Instrument (Respecting Folders)">
       <metadata>
@@ -351,6 +355,11 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.3" author="7thResonance" time="2025-08-28T11:57:57Z">
         <changelog><![CDATA[- Added file check for cache rebuild.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/8111f38c2d4b742487e08420d6f70b1d89f8eb62/Utilities/7R%20Insert%20Instrument%20(Respecting%20Folders).lua</source>
+      </version>
+      <version name="1.4" author="7thResonance" time="2026-01-04T08:20:08Z">
+        <changelog><![CDATA[- Added "remeber last search term" setting
+- Font size setting]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/37eaebe39f270e6af5e9243a388bad7d5edbe0fb/Utilities/7R%20Insert%20Instrument%20(Respecting%20Folders).lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert Project or Take Marker at mouse pointer.lua" type="script" desc="7R Insert Project/Take Marker at mouse pointer">
@@ -579,6 +588,11 @@ Doesnt create send if folder.]]></changelog>
       <version name="1.2" author="7thResonance" time="2025-08-19T19:35:25Z">
         <changelog><![CDATA[- Search and enter for quick insert]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/27c08a47eaca617c8ec38c6b1773b64130931ef5/Utilities/7R%20Track%20Template%20Inserter%20(GUI).lua</source>
+      </version>
+      <version name="1.3" author="7thResonance" time="2026-01-04T08:20:08Z">
+        <changelog><![CDATA[- added font size setting
+- remember last search term setting ]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/37eaebe39f270e6af5e9243a388bad7d5edbe0fb/Utilities/7R%20Track%20Template%20Inserter%20(GUI).lua</source>
       </version>
     </reapack>
   </category>
