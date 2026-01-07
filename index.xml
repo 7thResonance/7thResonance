@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="d05d2109367b48bbff5a5dea6cbaff5c421620ac">
+<index version="1" name="7thResonance" commit="500556e1b9c3ad7ad4f91130f19142bfe4063143">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -59,6 +59,20 @@
 - Smoothed the window change.
 - Waveform fade DB adjusted to -60 DB (values below will fade out naturaly without normalising)]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/6773239d5c99885f6ea436ac9fe92b9f43a82e5a/JSFX/7R%20Oscilloscope.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="7R Simple K Meter.jsfx" type="effect" desc="7R K Meter">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 A simple K meter JSFX\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="7thResonance" time="2026-01-07T07:52:21Z">
+        <source>https://github.com/7thResonance/7thResonance/raw/500556e1b9c3ad7ad4f91130f19142bfe4063143/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
