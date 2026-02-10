@@ -1,9 +1,9 @@
 --[[
 @description 7R Control Send volume of Selected Track
 @author 7thResonance
-@version 1.3
+@version 1.4
 @donation https://paypal.me/7thresonance
-@changelog Multiple sends to the same track bug is fixed. Controls each slot respectevely.
+@changelog Mirrors mute states.
 @about When mulltiple tracks are selected, can change the relative volume of the send over those tracks.
 
     due to my lack of knowledge, or limitation of API (i wouldnt know lmao) 
@@ -40,10 +40,12 @@ local function StoreSendVolumes()
         for j = 0, send_count - 1 do
             local send_name, vol = GetSendInfo(track, j)
             local pan = reaper.GetTrackSendInfo_Value(track, 0, j, "D_PAN")
+            local mute = reaper.GetTrackSendInfo_Value(track, 0, j, "B_MUTE")
             track_sends[track][j] = {
                 send_name = send_name,
                 vol = LinearToDB(vol),
-                pan = pan
+                pan = pan,
+                mute = mute
             }
         end
     end
@@ -116,18 +118,21 @@ local function Main()
                 local send_name, current_vol = GetSendInfo(track, j)
                 local current_vol_db = LinearToDB(current_vol)
                 local current_pan = reaper.GetTrackSendInfo_Value(track, 0, j, "D_PAN")
+                local current_mute = reaper.GetTrackSendInfo_Value(track, 0, j, "B_MUTE")
 
                 if track_sends[track] and track_sends[track][j] then
                     local stored = track_sends[track][j]
                     local vol_changed = (stored.vol ~= current_vol_db)
                     local pan_changed = math.abs(stored.pan - current_pan) > 0.001
-                    if vol_changed or pan_changed then
+                    local mute_changed = (stored.mute ~= current_mute)
+                    if vol_changed or pan_changed or mute_changed then
                         table.insert(changes, {
                             track = track,
                             send_idx = j,
                             send_name = stored.send_name or send_name,
                             vol_change_db = vol_changed and (current_vol_db - stored.vol) or 0,
-                            pan_change = pan_changed and (current_pan - stored.pan) or 0
+                            pan_change = pan_changed and (current_pan - stored.pan) or 0,
+                            mute_change = mute_changed and current_mute or nil
                         })
                     end
                 end
@@ -140,6 +145,7 @@ local function Main()
                 local target_send_name = change.send_name
                 local vol_change_db = change.vol_change_db
                 local pan_change = change.pan_change
+                local mute_change = change.mute_change
                 local changed_track = change.track
                 local send_idx = change.send_idx
 
@@ -167,6 +173,10 @@ local function Main()
                                     local current_pan2 = reaper.GetTrackSendInfo_Value(track2, 0, send_idx, "D_PAN")
                                     local new_pan2 = current_pan2 + pan_change
                                     reaper.SetTrackSendInfo_Value(track2, 0, send_idx, "D_PAN", new_pan2)
+                                end
+
+                                if mute_change ~= nil then
+                                    reaper.SetTrackSendInfo_Value(track2, 0, send_idx, "B_MUTE", mute_change)
                                 end
                             end
                         end
