@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.3
+version: 1.4
 about: A simple K meter JSFX
-changelog: Added value readouts
+changelog: no runaway value readouts below -120 DB
 options:no_meter
 
 
@@ -205,10 +205,10 @@ slider5 > 0 ? (
     gfx_setfont(2,"Arial",12);
     gfx_set(1,1,1,0.9);
 
-    sprintf(#pk_l, "%.1f", peak_db_l);
-    sprintf(#pk_r, "%.1f", peak_db_r);
-    sprintf(#rm_l, "%.1f", rms_db_l);
-    sprintf(#rm_r, "%.1f", rms_db_r);
+    peak_db_l < -120 ? strcpy(#pk_l, "-inf") : sprintf(#pk_l, "%.1f", peak_db_l);
+    peak_db_r < -120 ? strcpy(#pk_r, "-inf") : sprintf(#pk_r, "%.1f", peak_db_r);
+    rms_db_l  < -120 ? strcpy(#rm_l, "-inf") : sprintf(#rm_l, "%.1f", rms_db_l);
+    rms_db_r  < -120 ? strcpy(#rm_r, "-inf") : sprintf(#rm_r, "%.1f", rms_db_r);
 
     gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
     gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
