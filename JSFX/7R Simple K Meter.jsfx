@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.2
+version: 1.3
 about: A simple K meter JSFX
-changelog: Added peak hold and decay time sliders.
+changelog: Added value readouts
 options:no_meter
 
 
@@ -13,6 +13,7 @@ slider1:1<0,2,1{K-12,K-14,K-20}>K Mode
 slider2:300<100,2000,50>RMS Integration (ms)
 slider3:600<50,5000,50>Peak Falloff (ms)
 slider4:300<0,5000,50>Peak Hold (ms)
+slider5:1<0,1,1{Off,On}>Show Readouts
 
 //------------------------------------------------
 // Constants
@@ -196,3 +197,46 @@ loop(steps + 1,
 
     i += 1;
 ));
+
+//------------------------------------------------
+// Bottom Overlay Readout (L/R peak + RMS)
+//------------------------------------------------
+slider5 > 0 ? (
+    gfx_setfont(2,"Arial",12);
+    gfx_set(1,1,1,0.9);
+
+    sprintf(#pk_l, "%.1f", peak_db_l);
+    sprintf(#pk_r, "%.1f", peak_db_r);
+    sprintf(#rm_l, "%.1f", rms_db_l);
+    sprintf(#rm_r, "%.1f", rms_db_r);
+
+    gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
+    gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
+    gfx_measurestr(#rm_l, rm_l_w, rm_l_h);
+    gfx_measurestr(#rm_r, rm_r_w, rm_r_h);
+
+    y_peak = meter_bottom - (pk_l_h * 2) - 2;
+    y_rms  = meter_bottom - rm_l_h - 1;
+
+    // Left peak  P  Right peak
+    gfx_x = pad + (bar_w - pk_l_w) * 0.5;
+    gfx_y = y_peak;
+    gfx_printf(#pk_l);
+    gfx_x = pad + bar_w - 2;
+    gfx_y = y_peak;
+    gfx_printf("P");
+    gfx_x = pad + bar_w + (bar_w - pk_r_w) * 0.5;
+    gfx_y = y_peak;
+    gfx_printf(#pk_r);
+
+    // Left RMS  R  Right RMS
+    gfx_x = pad + (bar_w - rm_l_w) * 0.5;
+    gfx_y = y_rms;
+    gfx_printf(#rm_l);
+    gfx_x = pad + bar_w - 2;
+    gfx_y = y_rms;
+    gfx_printf("R");
+    gfx_x = pad + bar_w + (bar_w - rm_r_w) * 0.5;
+    gfx_y = y_rms;
+    gfx_printf(#rm_r);
+);
