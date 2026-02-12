@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.1
+version: 1.2
 about: A simple K meter JSFX
-changelog: added peak lines
+changelog: Added peak hold and decay time sliders.
 options:no_meter
 
 
@@ -11,6 +11,8 @@ options:no_meter
 //------------------------------------------------
 slider1:1<0,2,1{K-12,K-14,K-20}>K Mode
 slider2:300<100,2000,50>RMS Integration (ms)
+slider3:600<50,5000,50>Peak Falloff (ms)
+slider4:300<0,5000,50>Peak Hold (ms)
 
 //------------------------------------------------
 // Constants
@@ -26,6 +28,8 @@ rms_out_l = 0;
 rms_out_r = 0;
 peak_out_l = 0;
 peak_out_r = 0;
+peak_hold_count_l = 0;
+peak_hold_count_r = 0;
 
 //------------------------------------------------
 // Init
@@ -47,11 +51,27 @@ rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (spl1 * spl1);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
 
 // Peak with simple falloff
-peak_decay_tc = exp(-1 / (0.3 * srate));
+peak_falloff_s = max(slider3, 1) * 0.001;
+peak_hold_samples = max(slider4, 0) * 0.001 * srate;
+peak_decay_tc = exp(-1 / (peak_falloff_s * srate));
 peak_in_l = abs(spl0);
 peak_in_r = abs(spl1);
-peak_out_l = max(peak_in_l, peak_out_l * peak_decay_tc);
-peak_out_r = max(peak_in_r, peak_out_r * peak_decay_tc);
+
+peak_in_l >= peak_out_l ? (
+    peak_out_l = peak_in_l;
+    peak_hold_count_l = 0;
+) : (
+    peak_hold_count_l += 1;
+    peak_hold_count_l > peak_hold_samples ? peak_out_l = max(peak_in_l, peak_out_l * peak_decay_tc);
+);
+
+peak_in_r >= peak_out_r ? (
+    peak_out_r = peak_in_r;
+    peak_hold_count_r = 0;
+) : (
+    peak_hold_count_r += 1;
+    peak_hold_count_r > peak_hold_samples ? peak_out_r = max(peak_in_r, peak_out_r * peak_decay_tc);
+);
 
 //------------------------------------------------
 // Graphics
@@ -97,6 +117,7 @@ peak_n_r = min(max(peak_n_r, 0), 1);
 pad = 18;
 meter_h = gfx_h - pad*2;
 meter_w = gfx_w - pad*2;
+meter_bottom = gfx_h - pad;
 bar_w = meter_w / 2;
 
 // ----- RMS bars -----
@@ -109,13 +130,13 @@ yellow_h_l = min(max(rms_n_l - thresh_yellow_n, 0), thresh_red_n - thresh_yellow
 red_h_l = max(rms_n_l - thresh_red_n, 0) * meter_h;
 
 gfx_set(0.25, 0.85, 0.25, 1); // green
-gfx_rect(pad, gfx_h - pad - green_h_l, bar_w, green_h_l);
+gfx_rect(pad, meter_bottom - green_h_l, bar_w, green_h_l);
 
 gfx_set(1, 1, 0.3, 1); // yellow
-gfx_rect(pad, gfx_h - pad - green_h_l - yellow_h_l, bar_w, yellow_h_l);
+gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l, bar_w, yellow_h_l);
 
 gfx_set(1, 0.3, 0.3, 1); // red
-gfx_rect(pad, gfx_h - pad - green_h_l - yellow_h_l - red_h_l, bar_w, red_h_l);
+gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l - red_h_l, bar_w, red_h_l);
 
 // Right bar
 green_h_r = min(rms_n_r, thresh_yellow_n) * meter_h;
@@ -123,17 +144,17 @@ yellow_h_r = min(max(rms_n_r - thresh_yellow_n, 0), thresh_red_n - thresh_yellow
 red_h_r = max(rms_n_r - thresh_red_n, 0) * meter_h;
 
 gfx_set(0.25, 0.85, 0.25, 1); // green
-gfx_rect(pad + bar_w, gfx_h - pad - green_h_r, bar_w, green_h_r);
+gfx_rect(pad + bar_w, meter_bottom - green_h_r, bar_w, green_h_r);
 
 gfx_set(1, 1, 0.3, 1); // yellow
-gfx_rect(pad + bar_w, gfx_h - pad - green_h_r - yellow_h_r, bar_w, yellow_h_r);
+gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r, bar_w, yellow_h_r);
 
 gfx_set(1, 0.3, 0.3, 1); // red
-gfx_rect(pad + bar_w, gfx_h - pad - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
+gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
 
 // ----- Peak lines (L/R) -----
-peak_y_l = gfx_h - pad - (meter_h * peak_n_l);
-peak_y_r = gfx_h - pad - (meter_h * peak_n_r);
+peak_y_l = meter_bottom - (meter_h * peak_n_l);
+peak_y_r = meter_bottom - (meter_h * peak_n_r);
 
 gfx_set(1, 1, 1, 1);
 gfx_line(pad, peak_y_l, pad + bar_w, peak_y_l);
@@ -153,7 +174,7 @@ loop(steps + 1,
 (
     k_val = -18 + i * 3;
     n = (k_val + 18) / 36;
-    y = gfx_h - pad - (meter_h * n);
+    y = meter_bottom - (meter_h * n);
 
     // Set color based on K value
     k_val < 0 ?
@@ -175,13 +196,3 @@ loop(steps + 1,
 
     i += 1;
 ));
-
-//------------------------------------------------
-// Header & Readout
-//------------------------------------------------
-//gfx_set(1,1,1,1);
-//gfx_x = 4; gfx_y = 0;
-//gfx_printf("K-%d", k_display);
-
-//gfx_x = 0; gfx_y = gfx_h - 16;
-//gfx_printf("L %.1f  R %.1f", rms_db_l, rms_db_r);
