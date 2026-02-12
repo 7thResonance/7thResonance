@@ -1,7 +1,7 @@
 --[[
 desc:7R K Meter
 author:7thResonance
-version: 1.0
+version: 1.1
 about: A simple K meter JSFX
 @provides [effect] JSFX\7R Simple K Meter.jsfx
 --]]

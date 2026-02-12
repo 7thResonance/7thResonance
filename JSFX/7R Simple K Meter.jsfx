@@ -1,7 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.0
+version: 1.1
 about: A simple K meter JSFX
+changelog: added peak lines
 options:no_meter
 
 
@@ -23,6 +24,8 @@ rms_acc_l = 0;
 rms_acc_r = 0;
 rms_out_l = 0;
 rms_out_r = 0;
+peak_out_l = 0;
+peak_out_r = 0;
 
 //------------------------------------------------
 // Init
@@ -42,6 +45,13 @@ rms_acc_l = rms_tc * rms_acc_l + (1 - rms_tc) * (spl0 * spl0);
 rms_out_l = sqrt(max(rms_acc_l, EPS));
 rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (spl1 * spl1);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
+
+// Peak with simple falloff
+peak_decay_tc = exp(-1 / (0.3 * srate));
+peak_in_l = abs(spl0);
+peak_in_r = abs(spl1);
+peak_out_l = max(peak_in_l, peak_out_l * peak_decay_tc);
+peak_out_r = max(peak_in_r, peak_out_r * peak_decay_tc);
 
 //------------------------------------------------
 // Graphics
@@ -64,16 +74,24 @@ k_display =
 // ----- dB -----
 rms_db_l  = 20 * log10(max(rms_out_l, EPS)) + 3;
 rms_db_r  = 20 * log10(max(rms_out_r, EPS)) + 3;
+peak_db_l = 20 * log10(max(peak_out_l, EPS));
+peak_db_r = 20 * log10(max(peak_out_r, EPS));
 
 // ----- K mapping -----
 rms_k_l  = rms_db_l  + k_ref;
 rms_k_r  = rms_db_r  + k_ref;
+peak_k_l = peak_db_l + k_ref;
+peak_k_r = peak_db_r + k_ref;
 
 rms_n_l  = (rms_k_l  + 18) / 36;
 rms_n_r  = (rms_k_r  + 18) / 36;
+peak_n_l = (peak_k_l + 18) / 36;
+peak_n_r = (peak_k_r + 18) / 36;
 
 rms_n_l  = min(max(rms_n_l,  0), 1);
 rms_n_r  = min(max(rms_n_r, 0), 1);
+peak_n_l = min(max(peak_n_l, 0), 1);
+peak_n_r = min(max(peak_n_r, 0), 1);
 
 // ----- Geometry -----
 pad = 18;
@@ -112,6 +130,14 @@ gfx_rect(pad + bar_w, gfx_h - pad - green_h_r - yellow_h_r, bar_w, yellow_h_r);
 
 gfx_set(1, 0.3, 0.3, 1); // red
 gfx_rect(pad + bar_w, gfx_h - pad - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
+
+// ----- Peak lines (L/R) -----
+peak_y_l = gfx_h - pad - (meter_h * peak_n_l);
+peak_y_r = gfx_h - pad - (meter_h * peak_n_r);
+
+gfx_set(1, 1, 1, 1);
+gfx_line(pad, peak_y_l, pad + bar_w, peak_y_l);
+gfx_line(pad + bar_w, peak_y_r, pad + meter_w, peak_y_r);
 
 //------------------------------------------------
 // Scale: 3 dB increments with K-System colors
