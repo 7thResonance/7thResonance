@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.4
+version: 1.5
 about: A simple K meter JSFX
-changelog: no runaway value readouts below -120 DB
+changelog: Text alignment
 options:no_meter
 
 
@@ -224,8 +224,8 @@ slider5 > 0 ? (
     gfx_printf(#pk_l);
     gfx_x = pad + bar_w - 2;
     gfx_y = y_peak;
-    gfx_printf("P");
-    gfx_x = pad + bar_w + (bar_w - pk_r_w) * 0.5;
+    gfx_printf("P ");
+    gfx_x = pad + bar_w + (bar_w - pk_r_w) * 0.5 + 2;
     gfx_y = y_peak;
     gfx_printf(#pk_r);
 
@@ -235,8 +235,8 @@ slider5 > 0 ? (
     gfx_printf(#rm_l);
     gfx_x = pad + bar_w - 2;
     gfx_y = y_rms;
-    gfx_printf("R");
-    gfx_x = pad + bar_w + (bar_w - rm_r_w) * 0.5;
+    gfx_printf("R ");
+    gfx_x = pad + bar_w + (bar_w - rm_r_w) * 0.5 + 2;
     gfx_y = y_rms;
     gfx_printf(#rm_r);
 );
