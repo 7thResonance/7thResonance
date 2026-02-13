@@ -1,8 +1,9 @@
 --[[
 @description 7R MIDI Auto Send for CC Feedback
 @author 7thResonance
-@version 1.9
-@changelog - Sends are now pre FX to ignore midi merge setting on some VSTis
+@version 1.10
+@changelog - Stricter clean up when selection changes.
+    - Added exit clean up
 @link Youtube Video https://www.youtube.com/watch?v=u1325Y-tJZQ
 @donation https://paypal.me/7thresonance
 @about MIDI Auto Send from selected track to Specific track

@@ -1,7 +1,8 @@
 --[[
 @description 7R Split MIDI item by Pitch (Copy all CC)
 @author 7thResonance
-@version 1.0
+@version 1.1
+@changelog - Copies Sends and recieves as well
 @donation https://paypal.me/7thresonance
 @about Creates tracks for each pitch in selected MIDI items, copying all CC and text events.
 --]]
@@ -23,6 +24,50 @@ local function getNoteName(track, pitch)
     local n = noteNames[(pitch % 12) + 1]
     local o = math.floor(pitch / 12) - 1
     return n .. o
+end
+
+local sendReceiveParams = {
+    "B_MUTE",
+    "B_PHASE",
+    "B_MONO",
+    "D_VOL",
+    "D_PAN",
+    "D_PANLAW",
+    "I_SENDMODE",
+    "I_SRCCHAN",
+    "I_DSTCHAN",
+    "I_MIDIFLAGS",
+    "I_AUTOMODE"
+}
+
+local function copyRoutingParams(srcTrack, srcCat, srcIdx, dstTrack, dstCat, dstIdx)
+    for _, parm in ipairs(sendReceiveParams) do
+        local val = reaper.GetTrackSendInfo_Value(srcTrack, srcCat, srcIdx, parm)
+        reaper.SetTrackSendInfo_Value(dstTrack, dstCat, dstIdx, parm, val)
+    end
+end
+
+local function cloneTrackSendsAndReceives(srcTrack, dstTrack)
+    local sendCount = reaper.GetTrackNumSends(srcTrack, 0)
+    for s = 0, sendCount - 1 do
+        local destTrack =
+            reaper.GetTrackSendInfo_Value(srcTrack, 0, s, "P_DESTTRACK")
+        if destTrack then
+            local newSendIdx = reaper.CreateTrackSend(dstTrack, destTrack)
+            copyRoutingParams(srcTrack, 0, s, dstTrack, 0, newSendIdx)
+        end
+    end
+
+    local recvCount = reaper.GetTrackNumSends(srcTrack, -1)
+    for r = 0, recvCount - 1 do
+        local recvSrcTrack =
+            reaper.GetTrackSendInfo_Value(srcTrack, -1, r, "P_SRCTRACK")
+        if recvSrcTrack then
+            reaper.CreateTrackSend(recvSrcTrack, dstTrack)
+            local newRecvIdx = reaper.GetTrackNumSends(dstTrack, -1) - 1
+            copyRoutingParams(srcTrack, -1, r, dstTrack, -1, newRecvIdx)
+        end
+    end
 end
 
 --------------------------------------------------
@@ -121,6 +166,8 @@ for track, items in pairs(itemsByTrack) do
             local newTrack = reaper.GetTrack(0, trackIdx)
             lastChildTrack = newTrack
             insertOffset = insertOffset + 1
+
+            cloneTrackSendsAndReceives(track, newTrack)
 
             reaper.GetSetMediaTrackInfo_String(
                 newTrack,

@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.5
+version: 1.6
 about: A simple K meter JSFX
-changelog: Text alignment
+changelog: Added ITU filter
 options:no_meter
 
 
@@ -14,6 +14,7 @@ slider2:300<100,2000,50>RMS Integration (ms)
 slider3:600<50,5000,50>Peak Falloff (ms)
 slider4:300<0,5000,50>Peak Hold (ms)
 slider5:1<0,1,1{Off,On}>Show Readouts
+slider6:0<0,1,1{Off,On}>ITU Weighting for Meter
 
 //------------------------------------------------
 // Constants
@@ -31,6 +32,7 @@ peak_out_l = 0;
 peak_out_r = 0;
 peak_hold_count_l = 0;
 peak_hold_count_r = 0;
+old_itu = 0;
 
 //------------------------------------------------
 // Init
@@ -40,15 +42,106 @@ gfx_ext_flags |= 0x100 | 0x200;
 gfx_w = 30;
 gfx_h = 800;
 
+// ITU-R 468 weighting filter state memory (6 states per channel)
+itu_filter_mem = 0;
+itu_z_l0_u1 = itu_filter_mem;
+itu_z_l0_u2 = itu_z_l0_u1 + 1;
+itu_z_l1_u1 = itu_z_l0_u2 + 1;
+itu_z_l1_u2 = itu_z_l1_u1 + 1;
+itu_z_l2_u1 = itu_z_l1_u2 + 1;
+itu_z_l2_u2 = itu_z_l2_u1 + 1;
+itu_z_r0_u1 = itu_z_l2_u2 + 1;
+itu_z_r0_u2 = itu_z_r0_u1 + 1;
+itu_z_r1_u1 = itu_z_r0_u2 + 1;
+itu_z_r1_u2 = itu_z_r1_u1 + 1;
+itu_z_r2_u1 = itu_z_r1_u2 + 1;
+itu_z_r2_u2 = itu_z_r2_u1 + 1;
+
+// Hardcoded SOS coeffs (b0,b1,b2 | a0=1,a1,a2) for fs=48000
+sos0_b0 = 0.03895648;
+sos0_b1 = 0.07796198;
+sos0_b2 = 0.03900552;
+sos0_a1 = -0.78503289;
+sos0_a2 = 0.12076391;
+
+sos1_b0 = 1.00000000;
+sos1_b1 = 1.99952035;
+sos1_b2 = 0.99952096;
+sos1_a1 = -0.93847268;
+sos1_a2 = 0.41986127;
+
+sos2_b0 = 1.00000000;
+sos2_b1 = -0.00077845;
+sos2_b2 = -0.99922155;
+sos2_a1 = -0.58162359;
+sos2_a2 = 0.57828378;
+
+i = 0;
+loop(12,
+    itu_filter_mem[i] = 0;
+    i += 1;
+);
+
+@slider
+slider6 != old_itu ? (
+    old_itu = slider6;
+    i = 0;
+    loop(12,
+        itu_filter_mem[i] = 0;
+        i += 1;
+    );
+);
+
 //------------------------------------------------
 // Audio
 //------------------------------------------------
 @sample
+slider6 > 0.5 ? (
+    // Left channel cascade
+    u0_l = spl0 - sos0_a1 * itu_z_l0_u1[0] - sos0_a2 * itu_z_l0_u2[0];
+    y0_l = sos0_b0 * u0_l + sos0_b1 * itu_z_l0_u1[0] + sos0_b2 * itu_z_l0_u2[0];
+    itu_z_l0_u2[0] = itu_z_l0_u1[0];
+    itu_z_l0_u1[0] = u0_l;
+
+    u1_l = y0_l - sos1_a1 * itu_z_l1_u1[0] - sos1_a2 * itu_z_l1_u2[0];
+    y1_l = sos1_b0 * u1_l + sos1_b1 * itu_z_l1_u1[0] + sos1_b2 * itu_z_l1_u2[0];
+    itu_z_l1_u2[0] = itu_z_l1_u1[0];
+    itu_z_l1_u1[0] = u1_l;
+
+    u2_l = y1_l - sos2_a1 * itu_z_l2_u1[0] - sos2_a2 * itu_z_l2_u2[0];
+    y2_l = sos2_b0 * u2_l + sos2_b1 * itu_z_l2_u1[0] + sos2_b2 * itu_z_l2_u2[0];
+    itu_z_l2_u2[0] = itu_z_l2_u1[0];
+    itu_z_l2_u1[0] = u2_l;
+
+    filtered_l = y2_l;
+
+    // Right channel cascade
+    u0_r = spl1 - sos0_a1 * itu_z_r0_u1[0] - sos0_a2 * itu_z_r0_u2[0];
+    y0_r = sos0_b0 * u0_r + sos0_b1 * itu_z_r0_u1[0] + sos0_b2 * itu_z_r0_u2[0];
+    itu_z_r0_u2[0] = itu_z_r0_u1[0];
+    itu_z_r0_u1[0] = u0_r;
+
+    u1_r = y0_r - sos1_a1 * itu_z_r1_u1[0] - sos1_a2 * itu_z_r1_u2[0];
+    y1_r = sos1_b0 * u1_r + sos1_b1 * itu_z_r1_u1[0] + sos1_b2 * itu_z_r1_u2[0];
+    itu_z_r1_u2[0] = itu_z_r1_u1[0];
+    itu_z_r1_u1[0] = u1_r;
+
+    u2_r = y1_r - sos2_a1 * itu_z_r2_u1[0] - sos2_a2 * itu_z_r2_u2[0];
+    y2_r = sos2_b0 * u2_r + sos2_b1 * itu_z_r2_u1[0] + sos2_b2 * itu_z_r2_u2[0];
+    itu_z_r2_u2[0] = itu_z_r2_u1[0];
+    itu_z_r2_u1[0] = u2_r;
+
+    filtered_r = y2_r;
+) : (
+    filtered_l = spl0;
+    filtered_r = spl1;
+);
+
 // RMS (energy-based)
 rms_tc = exp(-1 / (slider2 * 0.001 * srate));
-rms_acc_l = rms_tc * rms_acc_l + (1 - rms_tc) * (spl0 * spl0);
+rms_acc_l = rms_tc * rms_acc_l + (1 - rms_tc) * (filtered_l * filtered_l);
 rms_out_l = sqrt(max(rms_acc_l, EPS));
-rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (spl1 * spl1);
+rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (filtered_r * filtered_r);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
 
 // Peak with simple falloff
