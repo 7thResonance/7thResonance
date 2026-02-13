@@ -1,9 +1,9 @@
 --[[
 @description 7R MIDI Auto Send for CC Feedback
 @author 7thResonance
-@version 1.10
-@changelog - Stricter clean up when selection changes.
-    - Added exit clean up
+@version 1.11
+@changelog - Re; Stricter clean up when selection changes.
+    - Re; Added exit clean up
 @link Youtube Video https://www.youtube.com/watch?v=u1325Y-tJZQ
 @donation https://paypal.me/7thresonance
 @about MIDI Auto Send from selected track to Specific track
@@ -20,39 +20,59 @@
     - Need track selection undo points.
 --]]
 
+local FEEDBACK_TRACK_NAME = "Hardware Feedback Track"
+
+function findHardwareFeedbackTrack()
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local track = reaper.GetTrack(0, i)
+---@diagnostic disable-next-line: redundant-parameter
+        local _, trackName = reaper.GetTrackName(track, "")
+        if trackName == FEEDBACK_TRACK_NAME then
+            return track
+        end
+    end
+    return nil
+end
+
 -- Function to check or create "Hardware Feedback Track" in the current project
 function ensureHardwareFeedbackTrack()
-    local feedbackTrack
-    for i = 0, reaper.CountTracks(0) - 1 do
-      local track = reaper.GetTrack(0, i)
----@diagnostic disable-next-line: redundant-parameter
-      local _, trackName = reaper.GetTrackName(track, "")
-      if trackName == "Hardware Feedback Track" then
-        feedbackTrack = track
-        break
-      end
-    end
-  
+    local feedbackTrack = findHardwareFeedbackTrack()
     if not feedbackTrack then
-      reaper.Undo_BeginBlock()
-      reaper.InsertTrackAtIndex(reaper.CountTracks(0), false)
-      feedbackTrack = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
-      reaper.GetSetMediaTrackInfo_String(feedbackTrack, "P_NAME", "Hardware Feedback Track", true)
-      reaper.Undo_EndBlock("Create Hardware Feedback Track", -1)
+        reaper.Undo_BeginBlock()
+        reaper.InsertTrackAtIndex(reaper.CountTracks(0), false)
+        feedbackTrack = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+        reaper.GetSetMediaTrackInfo_String(feedbackTrack, "P_NAME", FEEDBACK_TRACK_NAME, true)
+        reaper.Undo_EndBlock("Create Hardware Feedback Track", -1)
     end
     return feedbackTrack
 end
-  
--- Function to remove all sends from a track to "Hardware Feedback Track"
-function removeMIDISends(track, feedbackTrack)
-    if track and feedbackTrack then
-      for sendIdx = reaper.GetTrackNumSends(track, 0) - 1, 0, -1 do
-        local sendTrack = reaper.BR_GetMediaTrackSendInfo_Track(track, 0, sendIdx, 1)
-        if sendTrack == feedbackTrack then
-          reaper.RemoveTrackSend(track, 0, sendIdx)
-        end
-      end
+
+-- Remove all receives on the feedback track (equivalent to removing all sends targeting it)
+function removeAllFeedbackReceives(feedbackTrack)
+    if not feedbackTrack then return end
+    for recvIdx = reaper.GetTrackNumSends(feedbackTrack, -1) - 1, 0, -1 do
+        reaper.RemoveTrackSend(feedbackTrack, -1, recvIdx)
     end
+end
+
+-- Keep only one receive from keepSourceTrack on feedback track, remove everything else.
+-- Returns true when a kept receive already existed.
+function keepOnlyFeedbackReceiveFrom(feedbackTrack, keepSourceTrack)
+    if not feedbackTrack then return false end
+    local hasKeptReceive = false
+
+    for recvIdx = reaper.GetTrackNumSends(feedbackTrack, -1) - 1, 0, -1 do
+        local srcTrack = reaper.BR_GetMediaTrackSendInfo_Track(feedbackTrack, -1, recvIdx, 0)
+        local keepThis = keepSourceTrack and srcTrack == keepSourceTrack
+
+        if keepThis and not hasKeptReceive then
+            hasKeptReceive = true
+        else
+            reaper.RemoveTrackSend(feedbackTrack, -1, recvIdx)
+        end
+    end
+
+    return hasKeptReceive
 end
   
 -- Function to create a MIDI-only send to "Hardware Feedback Track"
@@ -64,6 +84,13 @@ function setupMIDISend(selectedTrack, feedbackTrack)
       reaper.SetTrackSendInfo_Value(selectedTrack, 0, sendIdx, "I_MIDIFLAGS", 1) -- MIDI only
       reaper.SetTrackSendInfo_Value(selectedTrack, 0, sendIdx, "I_SENDMODE", 1)
     end
+end
+
+function isHardwareFeedbackTrack(track)
+    if not track then return false end
+---@diagnostic disable-next-line: redundant-parameter
+    local _, trackName = reaper.GetTrackName(track, "")
+    return trackName == FEEDBACK_TRACK_NAME
 end
 
 -- Utility: Check if track has any items
@@ -136,23 +163,20 @@ function monitorTrackSelection()
 
     -- Only act if the selection has changed, recording just stopped, or a new item was added
     if selectedTrack ~= lastSelectedTrack or recordingJustStopped or itemCountIncreased then
-        -- Remove MIDI sends from the previously selected track
-        if lastSelectedTrack and reaper.ValidatePtr2(0, lastSelectedTrack, "MediaTrack*") then
-            removeMIDISends(lastSelectedTrack, feedbackTrack)
-        end
-
-        -- Set up MIDI send for the newly selected track, but only if it's not a folder track and meets eligibility
-        if selectedTrack and reaper.GetTrackName(selectedTrack, "") ~= "Hardware Feedback Track" then
+        local shouldCreateSend = false
+        if selectedTrack and not isHardwareFeedbackTrack(selectedTrack) then
             local isFolder = reaper.GetMediaTrackInfo_Value(selectedTrack, "I_FOLDERDEPTH")
             if isFolder <= 0 then -- Only proceed if not a folder track (folder depth <= 0)
                 if trackEligibleForSend(selectedTrack) then
-                    removeMIDISends(selectedTrack, feedbackTrack) -- Clean any existing sends
-                    setupMIDISend(selectedTrack, feedbackTrack)
-                else
-                    -- Remove any previous sends just in case
-                    removeMIDISends(selectedTrack, feedbackTrack)
+                    shouldCreateSend = true
                 end
             end
+        end
+
+        -- Single source of truth: check only feedback track receives.
+        local hasExisting = keepOnlyFeedbackReceiveFrom(feedbackTrack, shouldCreateSend and selectedTrack or nil)
+        if shouldCreateSend and not hasExisting then
+            setupMIDISend(selectedTrack, feedbackTrack)
         end
 
         -- Update the last selected track and item count
@@ -162,5 +186,16 @@ function monitorTrackSelection()
 
     reaper.defer(monitorTrackSelection)
 end
+
+function cleanupOnExit()
+    local feedbackTrack = findHardwareFeedbackTrack()
+    if feedbackTrack and reaper.ValidatePtr2(0, feedbackTrack, "MediaTrack*") then
+        reaper.Undo_BeginBlock()
+        removeAllFeedbackReceives(feedbackTrack)
+        reaper.Undo_EndBlock("MIDI Auto Send: remove feedback sends on exit", -1)
+    end
+end
+
+reaper.atexit(cleanupOnExit)
 
 monitorTrackSelection()
