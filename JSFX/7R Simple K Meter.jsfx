@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.6
+version: 1.7
 about: A simple K meter JSFX
-changelog: Added ITU filter
+changelog: Added a bunch of unneccessary stuff, but hey it can show down to -316 DB peaks
 options:no_meter
 
 
@@ -19,7 +19,7 @@ slider6:0<0,1,1{Off,On}>ITU Weighting for Meter
 //------------------------------------------------
 // Constants
 //------------------------------------------------
-EPS = 1e-12;
+EPS = 1e-6;
 
 //------------------------------------------------
 // State
@@ -33,6 +33,10 @@ peak_out_r = 0;
 peak_hold_count_l = 0;
 peak_hold_count_r = 0;
 old_itu = 0;
+silence_l = 0;
+silence_r = 0;
+silence_count_l = 0;
+silence_count_r = 0;
 
 //------------------------------------------------
 // Init
@@ -144,19 +148,58 @@ rms_out_l = sqrt(max(rms_acc_l, EPS));
 rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (filtered_r * filtered_r);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
 
-// Peak with simple falloff
+// Peak with two-stage falloff:
+// slider-controlled above -120 dBFS, accelerated below -120 dBFS
 peak_falloff_s = max(slider3, 1) * 0.001;
 peak_hold_samples = max(slider4, 0) * 0.001 * srate;
 peak_decay_tc = exp(-1 / (peak_falloff_s * srate));
+tail_thresh = 0.000001; // -120 dBFS
+tail_decay_tc = 0; // fastest possible tail: immediate drop after hold
 peak_in_l = abs(spl0);
 peak_in_r = abs(spl1);
+silence_enter_thresh = 0.00000000000000016; // enter silence at about -316 dBFS
+silence_exit_thresh = 0.00000000000000032;  // leave silence above about -310 dBFS
+silence_confirm_samples = max(1, srate * 0.003); // 3 ms debounce
+
+peak_in_l <= silence_enter_thresh ? (
+    silence_count_l += 1;
+) : (
+    silence_count_l = 0;
+);
+
+silence_l ? (
+    peak_in_l > silence_exit_thresh ? (
+        silence_l = 0;
+        silence_count_l = 0;
+    );
+) : (
+    silence_count_l >= silence_confirm_samples ? silence_l = 1;
+);
+
+peak_in_r <= silence_enter_thresh ? (
+    silence_count_r += 1;
+) : (
+    silence_count_r = 0;
+);
+
+silence_r ? (
+    peak_in_r > silence_exit_thresh ? (
+        silence_r = 0;
+        silence_count_r = 0;
+    );
+) : (
+    silence_count_r >= silence_confirm_samples ? silence_r = 1;
+);
 
 peak_in_l >= peak_out_l ? (
     peak_out_l = peak_in_l;
     peak_hold_count_l = 0;
 ) : (
     peak_hold_count_l += 1;
-    peak_hold_count_l > peak_hold_samples ? peak_out_l = max(peak_in_l, peak_out_l * peak_decay_tc);
+    peak_hold_count_l > peak_hold_samples ? (
+        decay_tc_l = peak_out_l <= tail_thresh ? tail_decay_tc : peak_decay_tc;
+        peak_out_l = max(peak_in_l, peak_out_l * decay_tc_l);
+    );
 );
 
 peak_in_r >= peak_out_r ? (
@@ -164,7 +207,10 @@ peak_in_r >= peak_out_r ? (
     peak_hold_count_r = 0;
 ) : (
     peak_hold_count_r += 1;
-    peak_hold_count_r > peak_hold_samples ? peak_out_r = max(peak_in_r, peak_out_r * peak_decay_tc);
+    peak_hold_count_r > peak_hold_samples ? (
+        decay_tc_r = peak_out_r <= tail_thresh ? tail_decay_tc : peak_decay_tc;
+        peak_out_r = max(peak_in_r, peak_out_r * decay_tc_r);
+    );
 );
 
 //------------------------------------------------
@@ -186,10 +232,10 @@ k_display =
                    20;
 
 // ----- dB -----
-rms_db_l  = 20 * log10(max(rms_out_l, EPS)) + 3;
-rms_db_r  = 20 * log10(max(rms_out_r, EPS)) + 3;
-peak_db_l = 20 * log10(max(peak_out_l, EPS));
-peak_db_r = 20 * log10(max(peak_out_r, EPS));
+rms_db_l  = 20 * log10(rms_out_l) + 3;
+rms_db_r  = 20 * log10(rms_out_r) + 3;
+peak_db_l = 20 * log10(peak_out_l);
+peak_db_r = 20 * log10(peak_out_r);
 
 // ----- K mapping -----
 rms_k_l  = rms_db_l  + k_ref;
@@ -298,10 +344,15 @@ slider5 > 0 ? (
     gfx_setfont(2,"Arial",12);
     gfx_set(1,1,1,0.9);
 
-    peak_db_l < -120 ? strcpy(#pk_l, "-inf") : sprintf(#pk_l, "%.1f", peak_db_l);
-    peak_db_r < -120 ? strcpy(#pk_r, "-inf") : sprintf(#pk_r, "%.1f", peak_db_r);
-    rms_db_l  < -120 ? strcpy(#rm_l, "-inf") : sprintf(#rm_l, "%.1f", rms_db_l);
-    rms_db_r  < -120 ? strcpy(#rm_r, "-inf") : sprintf(#rm_r, "%.1f", rms_db_r);
+    disp_peak_db_l = silence_l ? -10000 : peak_db_l;
+    disp_peak_db_r = silence_r ? -10000 : peak_db_r;
+    disp_rms_db_l  = silence_l ? -10000 : rms_db_l;
+    disp_rms_db_r  = silence_r ? -10000 : rms_db_r;
+
+    disp_peak_db_l < -316 ? strcpy(#pk_l, "-inf") : sprintf(#pk_l, "%.1f", disp_peak_db_l);
+    disp_peak_db_r < -316 ? strcpy(#pk_r, "-inf") : sprintf(#pk_r, "%.1f", disp_peak_db_r);
+    disp_rms_db_l  < -316 ? strcpy(#rm_l, "-inf") : sprintf(#rm_l, "%.1f", disp_rms_db_l);
+    disp_rms_db_r  < -316 ? strcpy(#rm_r, "-inf") : sprintf(#rm_r, "%.1f", disp_rms_db_r);
 
     gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
     gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
