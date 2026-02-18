@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="0cc765fbbd58e67265ef5f587097e18d606340ea">
+<index version="1" name="7thResonance" commit="d8848dbf23eb1974ef462ec700f0fa584c3023c8">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -614,6 +614,11 @@ Doesnt create send if folder.]]></changelog>
         <changelog><![CDATA[- Added Simple work/break timer with auto-start.
 - ]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/0cc765fbbd58e67265ef5f587097e18d606340ea/Utilities/7R%20Project%20Time%20Tracker.lua</source>
+      </version>
+      <version name="1.2" author="7thResonance" time="2026-02-18T11:40:31Z">
+        <changelog><![CDATA[- Work timer settings are now saved properly
+- Added double click on sliders to enter value directly via input box]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/d8848dbf23eb1974ef462ec700f0fa584c3023c8/Utilities/7R%20Project%20Time%20Tracker.lua</source>
       </version>
     </reapack>
     <reapack name="7R Project Version Manager.lua" type="script" desc="7R Project Version Manager">
