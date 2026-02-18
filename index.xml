@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="accf293cfe2752959a6a8f51e15a8d4801f1455c">
+<index version="1" name="7thResonance" commit="f5cc9fc7491c7a414baf44b6a02afd1f11bf3bca">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -595,6 +595,20 @@ Doesnt create send if folder.]]></changelog>
       <version name="1.0" author="7thResonance" time="2025-08-22T18:59:20Z">
         <changelog><![CDATA[- initial]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/70df493e4570455b8f677c3f08c3b0de8b9f06bb/Utilities/7R%20Project%20Browser.lua</source>
+      </version>
+    </reapack>
+    <reapack name="7R Project Time Tracker.lua" type="script" desc="7R Project Time Tracker">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState. Right-click window for options (reset, add minutes, font/size).\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="7thResonance" time="2026-02-18T02:57:10Z">
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/f5cc9fc7491c7a414baf44b6a02afd1f11bf3bca/Utilities/7R%20Project%20Time%20Tracker.lua</source>
       </version>
     </reapack>
     <reapack name="7R Project Version Manager.lua" type="script" desc="7R Project Version Manager">
