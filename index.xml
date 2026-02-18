@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="99aa2758b90dd20f75f5937b566de53c490e5f8a">
+<index version="1" name="7thResonance" commit="5e137ce7d62214754e282fa65cd877526a3dafbf">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -605,7 +605,7 @@ Doesnt create send if folder.]]></changelog>
 
 {\pard \ql \f0 \sa180 \li0 \fi0 A GUI to save versions of the project to a table and recall them. It saves a project into a custom format file (.7rvm)[AI thought of this name lmao, literaly 7thResonance version manager LMAO]. Each version which is opened will have a temporary rpp along with the master project. The temporary rpp will be deleted when the version is closed (if the GUI is open). All clean up and extraction only happens while the GUI is open. The updates on the version projects are copied automatically when the GUI opens again (if a change has been detected). You can also use the GUI to manage your project versions.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Save as will create a new branch (Master project). Save will function as normal updates.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Features - Save and recall project versions - Automatic cleanup of temporary files - GUI for managing project versions - Open tab detection - Active tag detection - Post save detection and autocopy (during opening of GUI) - Position and size is remembered\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Features - Save and recall project versions - Automatic cleanup of temporary files - GUI for managing project versions - Open tab detection - Active tag detection - Post save detection and autocopy (during opening of GUI) - Position and size is remembered - Media file cleanup utility (experimental, use with caution)\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Do not use this script for important projects, still needs a lot of testing. thats why the version is 0.51\par}
 }
 ]]></description>
@@ -619,6 +619,10 @@ Doesnt create send if folder.]]></changelog>
       <version name="0.51" author="7thResonance" time="2025-08-23T07:44:30Z">
         <changelog><![CDATA[- Initialise]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/d1140ebde775f09089bf2f5c3ab7fddbe6e7f952/Utilities/7R%20Project%20Version%20Manager.lua</source>
+      </version>
+      <version name="0.52" author="7thResonance" time="2026-02-18T01:46:17Z">
+        <changelog><![CDATA[- Added media file cleanup utility (experimental, use with caution)]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/5e137ce7d62214754e282fa65cd877526a3dafbf/Utilities/7R%20Project%20Version%20Manager.lua</source>
       </version>
     </reapack>
     <reapack name="7R Split MIDI item by Pitch (Copy all CC).lua" type="script" desc="7R Split MIDI item by Pitch (Copy all CC)">
