@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="10009a59ac862eb2fead7dc0f15b392c0016c670">
+<index version="1" name="7thResonance" commit="e175b161851c83ff4c69329ed41f58c33e23e29a">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -19,7 +19,6 @@
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Operates on all selected items. Undoable as a single action.\sa180\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-08-24T16:59:15Z">
         <changelog><![CDATA[- intital]]></changelog>
