@@ -1,16 +1,20 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.0
+@version 1.1
+@changelog - Added Simple work/break timer with auto-start.
+     - 
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
+  Simple work/break timer with auto-start.
 
 --]]
 
 local script_name = "Project Time Tracker"
 local ctx = reaper.ImGui_CreateContext(script_name)
 local AUTOSAVE_INTERVAL_SEC = 30
+local TIMER_AUTOSTART_DELAY_SEC = 3.0
 
 -- Compatibility: some ReaImGui versions use ImGui_Attach()/Detach() instead of ImGui_AttachFont()/DetachFont()
 local function ImGui_AttachFont_Compat(ctx, font)
@@ -30,6 +34,12 @@ local settings = {
   font_name = "Arial",
   font_size = 12,
   afk_seconds = 5,
+  enable_work_timer = false,
+  work_minutes = 25,
+  break_minutes = 5,
+  auto_start_work = true,
+  auto_start_break = false,
+  animation_enable = true,
 }
 
 local time_data = {
@@ -48,6 +58,18 @@ local add_minutes = 0
 
 local font = nil
 local pending_rebuild_font = true
+local timer_state = {
+  mode = "work",
+  remaining = 25 * 60,
+  running = false,
+  flash_until = 0,
+  autostart_due = 0,
+}
+
+local function ext_to_bool(v, default_value)
+  if v == "" or v == nil then return default_value end
+  return v == "1"
+end
 
 local function destroy()
   if last_proj and reaper.ValidatePtr(last_proj, "ReaProject*") then
@@ -90,6 +112,27 @@ local function load_settings(proj)
   local _, afk_str = reaper.GetProjExtState(proj, EXT_SECTION, "afk_seconds")
   settings.afk_seconds = tonumber(afk_str) or settings.afk_seconds or 5
 
+  local _, enable_timer = reaper.GetProjExtState(proj, EXT_SECTION, "enable_work_timer")
+  settings.enable_work_timer = ext_to_bool(enable_timer, settings.enable_work_timer)
+
+  local _, work_minutes = reaper.GetProjExtState(proj, EXT_SECTION, "work_minutes")
+  settings.work_minutes = tonumber(work_minutes) or settings.work_minutes or 25
+
+  local _, break_minutes = reaper.GetProjExtState(proj, EXT_SECTION, "break_minutes")
+  settings.break_minutes = tonumber(break_minutes) or settings.break_minutes or 5
+
+  local _, auto_start_work = reaper.GetProjExtState(proj, EXT_SECTION, "auto_start_work")
+  settings.auto_start_work = ext_to_bool(auto_start_work, settings.auto_start_work)
+
+  local _, auto_start_break = reaper.GetProjExtState(proj, EXT_SECTION, "auto_start_break")
+  settings.auto_start_break = ext_to_bool(auto_start_break, settings.auto_start_break)
+
+  local _, animation_enable = reaper.GetProjExtState(proj, EXT_SECTION, "animation_enable")
+  settings.animation_enable = ext_to_bool(animation_enable, settings.animation_enable)
+
+  if settings.work_minutes < 1 then settings.work_minutes = 1 end
+  if settings.break_minutes < 1 then settings.break_minutes = 1 end
+
   pending_rebuild_font = true
 end
 
@@ -98,6 +141,12 @@ local function save_settings(proj)
   reaper.SetProjExtState(proj, EXT_SECTION, "font_name", settings.font_name or "Arial")
   reaper.SetProjExtState(proj, EXT_SECTION, "font_size", tostring(settings.font_size or 12))
   reaper.SetProjExtState(proj, EXT_SECTION, "afk_seconds", tostring(settings.afk_seconds or 5))
+  reaper.SetProjExtState(proj, EXT_SECTION, "enable_work_timer", settings.enable_work_timer and "1" or "0")
+  reaper.SetProjExtState(proj, EXT_SECTION, "work_minutes", tostring(settings.work_minutes or 25))
+  reaper.SetProjExtState(proj, EXT_SECTION, "break_minutes", tostring(settings.break_minutes or 5))
+  reaper.SetProjExtState(proj, EXT_SECTION, "auto_start_work", settings.auto_start_work and "1" or "0")
+  reaper.SetProjExtState(proj, EXT_SECTION, "auto_start_break", settings.auto_start_break and "1" or "0")
+  reaper.SetProjExtState(proj, EXT_SECTION, "animation_enable", settings.animation_enable and "1" or "0")
 end
 
 local function load_time(proj)
@@ -136,6 +185,68 @@ local function format_time(seconds)
   local m = math.floor((seconds % 3600) / 60)
   local s = math.floor(seconds % 60)
   return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+local function timer_duration_for_mode(mode)
+  if mode == "break" then
+    return (tonumber(settings.break_minutes) or 5) * 60
+  end
+  return (tonumber(settings.work_minutes) or 25) * 60
+end
+
+local function timer_autostart_for_mode(mode)
+  if mode == "break" then return settings.auto_start_break end
+  return settings.auto_start_work
+end
+
+local function reset_work_timer(mode, should_run)
+  timer_state.mode = mode or "work"
+  timer_state.remaining = timer_duration_for_mode(timer_state.mode)
+  timer_state.running = should_run == true
+  timer_state.autostart_due = 0
+end
+
+local function switch_work_timer(is_skip, now)
+  local ts = now or reaper.time_precise()
+  if timer_state.mode == "work" then
+    timer_state.mode = "break"
+  else
+    timer_state.mode = "work"
+  end
+  timer_state.remaining = timer_duration_for_mode(timer_state.mode)
+  timer_state.autostart_due = 0
+
+  local auto_start_next = timer_autostart_for_mode(timer_state.mode)
+  if (not is_skip) and auto_start_next then
+    -- After a timer completes, wait briefly before auto-starting the next phase.
+    timer_state.running = false
+    timer_state.autostart_due = ts + TIMER_AUTOSTART_DELAY_SEC
+  else
+    timer_state.running = auto_start_next
+  end
+
+  if settings.animation_enable and not is_skip then
+    -- Use a stable green highlight window instead of text flicker.
+    timer_state.flash_until = ts + 1.2
+  else
+    timer_state.flash_until = 0
+  end
+end
+
+local function update_work_timer(delta, now)
+  if not settings.enable_work_timer then return end
+  local ts = now or reaper.time_precise()
+  if (timer_state.autostart_due or 0) > 0 and ts >= timer_state.autostart_due then
+    timer_state.running = true
+    timer_state.autostart_due = 0
+  end
+  if not timer_state.running then return end
+  if not delta or delta <= 0 then return end
+
+  timer_state.remaining = timer_state.remaining - delta
+  if timer_state.remaining <= 0 then
+    switch_work_timer(false, ts)
+  end
 end
 
 local function concat_path(...)
@@ -275,6 +386,7 @@ local function main()
     load_settings(proj)
     load_time(proj)
     armed_cached = scan_armed_tracks(proj)
+    reset_work_timer("work", settings.auto_start_work)
     last_proj = proj
     last_proj_id = proj_id
   end
@@ -289,7 +401,9 @@ local function main()
   time_data.last_update = now  -- always advance, so AFK doesn't inflate later
 
   if delta > 0 and delta < 10 then
-    if not is_afk(proj, now) then
+    local afk = is_afk(proj, now)
+    if not afk then
+      update_work_timer(delta, now)
       time_data.total = time_data.total + delta
     end
   end
@@ -311,10 +425,67 @@ local function main()
     local text_w, text_h = reaper.ImGui_CalcTextSize(ctx, time_str)
     local avail_w, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
     local cur_x, cur_y = reaper.ImGui_GetCursorPos(ctx)
+
+    local line_gap = 8
+    local total_h = text_h
+    local work_mode_name = timer_state.mode == "work" and "W" or "B"
+    local work_timer_str = work_mode_name .. " " .. format_time(timer_state.remaining)
+    local _, work_text_h = reaper.ImGui_CalcTextSize(ctx, work_timer_str)
+    local work_button_h = work_text_h + 8
+    local show_work_timer = settings.enable_work_timer
+    if show_work_timer then
+      total_h = text_h + line_gap + work_button_h
+    end
+
+    local centered_y = cur_y + math.max(0, (avail_h - total_h) * 0.5)
     local centered_x = cur_x + math.max(0, (avail_w - text_w) * 0.5)
-    local centered_y = cur_y + math.max(0, (avail_h - text_h) * 0.5)
     reaper.ImGui_SetCursorPos(ctx, centered_x, centered_y)
     reaper.ImGui_Text(ctx, time_str)
+
+    if show_work_timer then
+      local row_y = centered_y + text_h + line_gap
+      local arrow_w = 22
+      local arrow_gap = 0
+
+      local is_flash = settings.animation_enable and (now < (timer_state.flash_until or 0))
+      local is_waiting_autostart = (timer_state.autostart_due or 0) > now
+
+      local work_btn_w = reaper.ImGui_CalcTextSize(ctx, work_timer_str) + 18
+      local row_w = work_btn_w + arrow_gap + arrow_w
+      local row_x = cur_x + math.max(0, (avail_w - row_w) * 0.5)
+
+      reaper.ImGui_SetCursorPos(ctx, row_x, row_y)
+      local was_waiting_autostart = is_waiting_autostart
+      local was_flash = is_flash
+      local was_paused = (not timer_state.running) and (not was_waiting_autostart)
+      if was_waiting_autostart or was_flash then
+        -- Green highlight after transition to next phase and while waiting auto-start.
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x51B05BFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x63BF6CFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x3E9648FF)
+      elseif was_paused then
+        -- Show paused state via yellow button background instead of text suffix.
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0xE6C84BFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0xF2D663FF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0xCCAF35FF)
+      end
+      if reaper.ImGui_Button(ctx, work_timer_str, work_btn_w, 0) then
+        timer_state.autostart_due = 0
+        timer_state.running = not timer_state.running
+      end
+      if was_waiting_autostart or was_flash or was_paused then
+        reaper.ImGui_PopStyleColor(ctx, 3)
+      end
+
+      reaper.ImGui_SetCursorPos(ctx, row_x + work_btn_w + arrow_gap, row_y)
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x00000000)
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x00000000)
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x00000000)
+      if reaper.ImGui_Button(ctx, ">", arrow_w, 0) then
+        switch_work_timer(true, now)
+      end
+      reaper.ImGui_PopStyleColor(ctx, 3)
+    end
 
     if font then reaper.ImGui_PopFont(ctx) end
 
@@ -351,6 +522,39 @@ local function main()
       if changed_afk then
         settings.afk_seconds = new_afk
       end
+
+      local changed_enable_timer, new_enable_timer = reaper.ImGui_Checkbox(ctx, "Enable Work Timer", settings.enable_work_timer)
+      if changed_enable_timer then
+        settings.enable_work_timer = new_enable_timer
+        if settings.enable_work_timer then
+          reset_work_timer("work", settings.auto_start_work)
+        end
+      end
+
+      local changed_work_mins, new_work_mins = reaper.ImGui_SliderInt(ctx, "Work Time (min)", settings.work_minutes or 25, 1, 240)
+      if changed_work_mins then
+        settings.work_minutes = new_work_mins
+        if timer_state.mode == "work" then
+          timer_state.remaining = timer_duration_for_mode("work")
+        end
+      end
+
+      local changed_break_mins, new_break_mins = reaper.ImGui_SliderInt(ctx, "Break Time (min)", settings.break_minutes or 5, 1, 120)
+      if changed_break_mins then
+        settings.break_minutes = new_break_mins
+        if timer_state.mode == "break" then
+          timer_state.remaining = timer_duration_for_mode("break")
+        end
+      end
+
+      local changed_auto_work, new_auto_work = reaper.ImGui_Checkbox(ctx, "Auto Start Work", settings.auto_start_work)
+      if changed_auto_work then settings.auto_start_work = new_auto_work end
+
+      local changed_auto_break, new_auto_break = reaper.ImGui_Checkbox(ctx, "Auto Start Break", settings.auto_start_break)
+      if changed_auto_break then settings.auto_start_break = new_auto_break end
+
+      local changed_anim, new_anim = reaper.ImGui_Checkbox(ctx, "Animation Enable", settings.animation_enable)
+      if changed_anim then settings.animation_enable = new_anim end
 
       reaper.ImGui_Separator(ctx)
 
@@ -390,6 +594,7 @@ do
     load_settings(init_proj)
     load_time(init_proj)
     armed_cached = scan_armed_tracks(init_proj)
+    reset_work_timer("work", settings.auto_start_work)
     last_proj = init_proj
     last_proj_id = get_project_id(init_proj, init_proj_fn)
   end
