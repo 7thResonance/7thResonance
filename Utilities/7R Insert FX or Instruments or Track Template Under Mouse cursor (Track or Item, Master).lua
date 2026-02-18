@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.6
-@changelog - jsfx naming fix
+@version 3.7
+@changelog - Single click inserts stuff
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
@@ -1400,6 +1400,9 @@ local function insert_fx(fx_name)
             target_item = nil
             insert_mode = "track"
             created_new_track = true
+            if fx_index > -1 then
+                return true
+            end
         end
     else
         -- Determine targets
@@ -1563,7 +1566,8 @@ local function draw_main_gui_tree_contents()
                 if clicked and not dragging then
                     highlighted_fx_index = i
                     arrow_key_pressed = true
-                    if insert_fx(row.original) and settings.auto_close_on_insert then
+                    local inserted = insert_fx(row.original)
+                    if settings.auto_close_on_insert and (inserted or is_instrument_name(row.original)) then
                         window_open = false
                     end
                 end
@@ -1584,7 +1588,8 @@ local function draw_main_gui_tree_contents()
                     local insert_idx = arrow_key_pressed and highlighted_fx_index or 1
                     local target = rows[insert_idx]
                     if target and target.original then
-                        if insert_fx(target.original) and settings.auto_close_on_insert then
+                        local inserted = insert_fx(target.original)
+                        if settings.auto_close_on_insert and (inserted or is_instrument_name(target.original)) then
                             window_open = false
                         end
                     end
@@ -1656,7 +1661,8 @@ local function draw_main_gui_tree_contents()
                                                                 end
 
                                                                 if clicked and not dragging then
-                                                                    if insert_fx(fx) and settings.auto_close_on_insert then
+                                                                    local inserted = insert_fx(fx)
+                                                                    if settings.auto_close_on_insert and (inserted or is_instrument_name(fx)) then
                                                                         window_open = false
                                                                     end
                                                                 end
@@ -1710,7 +1716,8 @@ local function draw_main_gui_tree_contents()
                                                         end
 
                                                         if clicked and not dragging then
-                                                            if insert_fx(fx) and settings.auto_close_on_insert then
+                                                            local inserted = insert_fx(fx)
+                                                            if settings.auto_close_on_insert and (inserted or is_instrument_name(fx)) then
                                                                 window_open = false
                                                             end
                                                         end

@@ -1,10 +1,9 @@
 --[[
 @description 7R Insert Instrument (Respecting Folders)
 @author 7thResonance
-@version 1.4
+@version 1.5
 @changelog
-     - Added "remeber last search term" setting
-     - Font size setting
+     - single click inserts stuff
 @about Original Folder Respect logic is by Aaron Cendan (Insert New Track Respect Folders)
   Uses that logic to insert instrument at the start,middle, or end of folders.
   If no folder or track is selected, inserts at end of tracks
@@ -709,10 +708,6 @@ function draw_instrument_list()
         if reaper.ImGui_Selectable(ctx, instrument.name, is_selected) then
           selected_index = i
           selected_instrument = instrument
-        end
-        
-        -- Double-click to insert
-        if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
           if insert_instrument(instrument) then
             if settings.auto_close_on_insert then
               window_open = false

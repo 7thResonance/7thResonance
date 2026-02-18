@@ -1,13 +1,12 @@
 --[[
 @description 7R Track Template Inserter (GUI)
 @author 7thResonance
-@version 1.3
+@version 1.4
 @about
   Browse and insert REAPER track templates organized in a tree structure
   matching the folder hierarchy in the TrackTemplates directory.
   Double-click to insert track templates into the current project.
-@changelog - added font size setting
-           - remember last search term setting 
+@changelog - Single click adds stuff
 @screenshot Window https://i.postimg.cc/Y25QbqXX/Screenshot-2025-07-12-213753.png
 --]]
 
@@ -553,7 +552,7 @@ local function draw_tree_node(item, depth)
 
     -- Use path for comparison since template objects might be different instances
     local is_selected = (selected_template and selected_template.path == item.path)
-    local selectable_flags = reaper.ImGui_SelectableFlags_AllowDoubleClick()
+    local selectable_flags = 0
 
     -- Calculate available width for template name to avoid overlap with tag
     local available_width = reaper.ImGui_GetContentRegionAvail(ctx)
@@ -563,12 +562,9 @@ local function draw_tree_node(item, depth)
     -- Create a unique ID for the selectable
     local unique_id = "template_" .. item.relative_path
 
-    if reaper.ImGui_Selectable(ctx, item.name .. "##" .. unique_id, is_selected, selectable_flags, name_width, 0) then
+    reaper.ImGui_Selectable(ctx, item.name .. "##" .. unique_id, is_selected, selectable_flags, name_width, 0)
+    if reaper.ImGui_IsItemClicked(ctx, 0) then
       selected_template = item
-    end
-
-    -- Double-click to insert
-    if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
       if insert_template(item) then
         if settings.auto_close_on_insert then
           window_open = false
