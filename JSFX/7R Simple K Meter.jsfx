@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.7
+version: 1.8
 about: A simple K meter JSFX
-changelog: Added a bunch of unneccessary stuff, but hey it can show down to -316 DB peaks
+changelog: Added sliders for range and division for the marking
 options:no_meter
 
 
@@ -15,6 +15,9 @@ slider3:600<50,5000,50>Peak Falloff (ms)
 slider4:300<0,5000,50>Peak Hold (ms)
 slider5:1<0,1,1{Off,On}>Show Readouts
 slider6:0<0,1,1{Off,On}>ITU Weighting for Meter
+slider7:-18<-120,0,1>Scale Min (K)
+slider8:18<0,48,1>Scale Max (K)
+slider9:3<1,12,1>Scale Step (dB)
 
 //------------------------------------------------
 // Constants
@@ -157,39 +160,10 @@ tail_thresh = 0.000001; // -120 dBFS
 tail_decay_tc = 0; // fastest possible tail: immediate drop after hold
 peak_in_l = abs(spl0);
 peak_in_r = abs(spl1);
-silence_enter_thresh = 0.00000000000000016; // enter silence at about -316 dBFS
-silence_exit_thresh = 0.00000000000000032;  // leave silence above about -310 dBFS
-silence_confirm_samples = max(1, srate * 0.003); // 3 ms debounce
+silence_instant_thresh = 0.00000000000000016; // instant silence detect below about -316 dBFS
 
-peak_in_l <= silence_enter_thresh ? (
-    silence_count_l += 1;
-) : (
-    silence_count_l = 0;
-);
-
-silence_l ? (
-    peak_in_l > silence_exit_thresh ? (
-        silence_l = 0;
-        silence_count_l = 0;
-    );
-) : (
-    silence_count_l >= silence_confirm_samples ? silence_l = 1;
-);
-
-peak_in_r <= silence_enter_thresh ? (
-    silence_count_r += 1;
-) : (
-    silence_count_r = 0;
-);
-
-silence_r ? (
-    peak_in_r > silence_exit_thresh ? (
-        silence_r = 0;
-        silence_count_r = 0;
-    );
-) : (
-    silence_count_r >= silence_confirm_samples ? silence_r = 1;
-);
+silence_l = peak_in_l <= silence_instant_thresh;
+silence_r = peak_in_r <= silence_instant_thresh;
 
 peak_in_l >= peak_out_l ? (
     peak_out_l = peak_in_l;
@@ -243,10 +217,15 @@ rms_k_r  = rms_db_r  + k_ref;
 peak_k_l = peak_db_l + k_ref;
 peak_k_r = peak_db_r + k_ref;
 
-rms_n_l  = (rms_k_l  + 18) / 36;
-rms_n_r  = (rms_k_r  + 18) / 36;
-peak_n_l = (peak_k_l + 18) / 36;
-peak_n_r = (peak_k_r + 18) / 36;
+scale_min = slider7;
+scale_max = max(slider8, scale_min + 1);
+scale_span = scale_max - scale_min;
+scale_step = max(slider9, 1);
+
+rms_n_l  = (rms_k_l  - scale_min) / scale_span;
+rms_n_r  = (rms_k_r  - scale_min) / scale_span;
+peak_n_l = (peak_k_l - scale_min) / scale_span;
+peak_n_r = (peak_k_r - scale_min) / scale_span;
 
 rms_n_l  = min(max(rms_n_l,  0), 1);
 rms_n_r  = min(max(rms_n_r, 0), 1);
@@ -261,8 +240,8 @@ meter_bottom = gfx_h - pad;
 bar_w = meter_w / 2;
 
 // ----- RMS bars -----
-thresh_yellow_n = 18 / 36;
-thresh_red_n = (4 + 18) / 36;
+thresh_yellow_n = (0 - scale_min) / scale_span;
+thresh_red_n = (4 - scale_min) / scale_span;
 
 // Left bar
 green_h_l = min(rms_n_l, thresh_yellow_n) * meter_h;
@@ -301,10 +280,12 @@ gfx_line(pad, peak_y_l, pad + bar_w, peak_y_l);
 gfx_line(pad + bar_w, peak_y_r, pad + meter_w, peak_y_r);
 
 //------------------------------------------------
-// Scale: 3 dB increments with K-System colors
+// Scale: user-defined dB increments with K-System colors
 //------------------------------------------------
-steps = 12;
+steps = floor(scale_span / scale_step);
 i = 0;
+label_every = max(1, floor((6 / scale_step) + 0.5));
+top_tick_needed = abs((scale_min + steps * scale_step) - scale_max) > 0.001;
 
 // Thresholds for colors based on mode
 thresh_yellow = 0;
@@ -312,8 +293,8 @@ thresh_red = 4;
 
 loop(steps + 1,
 (
-    k_val = -18 + i * 3;
-    n = (k_val + 18) / 36;
+    k_val = scale_min + i * scale_step;
+    n = (k_val - scale_min) / scale_span;
     y = meter_bottom - (meter_h * n);
 
     // Set color based on K value
@@ -327,8 +308,8 @@ loop(steps + 1,
 
     gfx_line(pad - 4, y, pad + meter_w + 4, y);
 
-    // label every 6 dB (every 2 steps)
-    (i % 2 == 0) ? (
+    // label near every 6 dB
+    (i % label_every == 0) ? (
         gfx_x = 2;
         gfx_y = y - 6;
         gfx_printf("%+d", k_val);
@@ -336,6 +317,25 @@ loop(steps + 1,
 
     i += 1;
 ));
+
+top_tick_needed ? (
+    k_val = scale_max;
+    n = (k_val - scale_min) / scale_span;
+    y = meter_bottom - (meter_h * n);
+
+    k_val < 0 ?
+        gfx_set(0.5, 0.5, 0.5, 0.6) :
+    k_val > thresh_red ?
+        gfx_set(1, 0.3, 0.3, 0.6) :
+    k_val > thresh_yellow ?
+        gfx_set(1, 1, 0.3, 0.6) :
+        gfx_set(0.25, 0.85, 0.25, 0.6);
+
+    gfx_line(pad - 4, y, pad + meter_w + 4, y);
+    gfx_x = 2;
+    gfx_y = y - 6;
+    gfx_printf("%+d", k_val);
+);
 
 //------------------------------------------------
 // Bottom Overlay Readout (L/R peak + RMS)
@@ -384,3 +384,4 @@ slider5 > 0 ? (
     gfx_y = y_rms;
     gfx_printf(#rm_r);
 );
+
