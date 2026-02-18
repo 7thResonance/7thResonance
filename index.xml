@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="6f0a86a14f7f468e339f564eddf60a298391da98">
+<index version="1" name="7thResonance" commit="10009a59ac862eb2fead7dc0f15b392c0016c670">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -156,7 +156,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Known issues; Undo doesnt work properly, have to undo untill track seletion changes for intial values to be restored. (idk how to fix this)\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-06-26T14:39:10Z">
         <changelog><![CDATA[Initial]]></changelog>
@@ -190,7 +189,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Lua Script for Reaper: Offline non-instrument FX, Freeze Selected Tracks to Stereo, Unlock All Items Directly, Online Remaining FX\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-05-29T02:08:27Z">
         <changelog><![CDATA[Initial]]></changelog>
@@ -220,7 +218,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Links the same FX on selected track.\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-11-13T19:55:59Z">
         <changelog><![CDATA[- Initial]]></changelog>
@@ -256,7 +253,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 ]]></description>
         <link rel="screenshot">https://i.postimg.cc/1RNB05tC/Screenshot-2025-08-08-012257.png</link>
         <link rel="screenshot">https://i.postimg.cc/RV5Rg5JM/Screenshot-2025-08-08-012308.png</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-08-07T19:54:08Z">
         <changelog><![CDATA[- Initial]]></changelog>
@@ -282,7 +278,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 ]]></description>
         <link rel="screenshot">https://i.postimg.cc/DyqgzknJ/Screenshot-2025-07-11-062605.png</link>
         <link rel="screenshot">https://i.postimg.cc/3JM17J5Q/Screenshot-2025-07-11-062614.png</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="3.0" author="7thResonance" time="2025-09-28T08:34:43Z">
         <changelog><![CDATA[- Added single pane view (Prefered for docking to the side)
@@ -328,7 +323,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 }
 ]]></description>
         <link rel="screenshot" href="https://i.postimg.cc/W4RTQztz/Screenshot-2025-07-11-143430.png">Window</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-07-11T09:07:07Z">
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/dec42d96947981397d039516f87d0d552ab2d43d/Utilities/7R%20Insert%20Instrument%20(Respecting%20Folders).lua</source>
@@ -362,7 +356,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Allows to add markers on items themselves or the ruler (project markers), just point and press shortcut!\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-05-19T13:09:00Z">
         <changelog><![CDATA[Initial]]></changelog>
@@ -389,7 +382,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <link rel="screenshot" href="https://i.postimg.cc/wMR1g4tb/Screenshot-2025-08-20-044443.png">Settings</link>
         <link rel="screenshot" href="https://i.postimg.cc/XXMpJKdN/Screenshot-2025-08-20-044433.png">Loaded KSs</link>
         <link rel="screenshot" href="https://i.postimg.cc/Wpd8d2gx/Screenshot-2025-08-20-044509.png">KS Inject</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.o" author="7thResonance" time="2025-08-19T23:21:49Z">
         <changelog><![CDATA[- Initial]]></changelog>
@@ -425,7 +417,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Forum Post link https://forum.cockos.com/showthread.php?t=301676\sa180\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.1" author="7thResonance" time="2025-07-02T14:00:51Z">
         <changelog><![CDATA[Initial]]></changelog>
@@ -481,7 +472,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 }
 ]]></description>
         <link rel="website" href="https://www.youtube.com/watch?v=u1325Y-tJZQ">Youtube Video</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.4" author="7thResonance" time="2025-05-19T11:50:52Z">
         <changelog><![CDATA[Delay of 500 ms.
@@ -535,7 +525,6 @@ Doesnt create send if folder.]]></changelog>
 }
 ]]></description>
         <link rel="screenshot" href="https://i.postimg.cc/W1D3q8m6/Screenshot-2025-08-23-002124.png">Window</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-08-22T18:59:20Z">
         <changelog><![CDATA[- initial]]></changelog>
@@ -579,7 +568,6 @@ Doesnt create send if folder.]]></changelog>
 }
 ]]></description>
         <link rel="screenshot" href="https://i.postimg.cc/qRNQ9926/Screenshot-2025-08-23-001441.png">Window</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="0.5" author="7thResonance" time="2025-08-22T19:27:06Z">
         <changelog><![CDATA[- Initialise]]></changelog>
@@ -610,7 +598,6 @@ Doesnt create send if folder.]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Requires SWS extension for mouse-position-at-arrange support.\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2026-02-18T01:54:36Z">
         <source main="main">https://github.com/7thResonance/7thResonance/raw/accf293cfe2752959a6a8f51e15a8d4801f1455c/Utilities/7R%20Split%20item(s)%20under%20mouse%20cursor%20(group%20+%20multiselect%20aware,%20ignore%20snap).lua</source>
@@ -625,7 +612,6 @@ Doesnt create send if folder.]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Creates tracks for each pitch in selected MIDI items, copying all CC and text events.\par}
 }
 ]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2026-01-04T15:59:24Z">
         <source main="main">https://github.com/7thResonance/7thResonance/raw/d05d2109367b48bbff5a5dea6cbaff5c421620ac/Utilities/7R%20Split%20MIDI%20item%20by%20Pitch%20(Copy%20all%20CC).lua</source>
@@ -645,7 +631,6 @@ Doesnt create send if folder.]]></changelog>
 }
 ]]></description>
         <link rel="screenshot" href="https://i.postimg.cc/Y25QbqXX/Screenshot-2025-07-12-213753.png">Window</link>
-        <link rel="donation">https://paypal.me/7thresonance</link>
       </metadata>
       <version name="1.0" author="7thResonance" time="2025-07-12T16:22:57Z">
         <changelog><![CDATA[- initial]]></changelog>
@@ -679,7 +664,6 @@ Doesnt create send if folder.]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Reapack Repository URL: https://raw.githubusercontent.com/7thResonance/7thResonance/refs/heads/master/index.xml\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Github: https://github.com/7thResonance/7thResonance\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Discord: https://discord.com/invite/Y7MWJgB4mc\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Donation https://paypal.me/7thresonance\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Scripts;\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Auto send MIDI - Send selected track's CC to a track which can be sent back to motorized faders.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert Markers - Based on mouse pointer. Either on the ruler or on the item itself.\par}
@@ -688,9 +672,11 @@ Doesnt create send if folder.]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert Instrument based on track Selection - GUI to add instruments (Respects Folders)\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert Track Templates - GUI to add template tracks\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Control Sends of Selected Track - Allows controlling send volume of many tracks at once\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Adds [Frozen] to Frozen Track's Name - Add ' [Frozen] to Frozen tracks, removes it when thawed\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Marker Exporter - GUI to export Project/Take Markers and Regions.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 FX Link - Links selected Track's Focused FX (relative)\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Project Broswer\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Project Version Manager\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 FX send manager\par}
 }
 ]]></description>
   </metadata>
