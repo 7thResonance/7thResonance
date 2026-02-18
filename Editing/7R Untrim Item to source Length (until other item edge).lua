@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.0
 @changelog - intital
-@donation https://paypal.me/7thresonance
 @about 
  Expands selected media item(s) so their visible take covers the full source length.
  Each edge (left and right) is expanded independently and will stop at the nearest
