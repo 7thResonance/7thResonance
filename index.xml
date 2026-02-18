@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="fdf0eb5cbcc9a778439759e099e44666e0809680">
+<index version="1" name="7thResonance" commit="22d33209f4c041691b41733d06b090207244a803">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -101,6 +101,10 @@
       <version name="1.7" author="7thResonance" time="2026-02-14T05:36:34Z">
         <changelog><![CDATA[Added a bunch of unneccessary stuff, but hey it can show down to -316 DB peaks]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/99aa2758b90dd20f75f5937b566de53c490e5f8a/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
+      </version>
+      <version name="1.8" author="7thResonance" time="2026-02-18T13:32:09Z">
+        <changelog><![CDATA[Added sliders for range and division for the marking]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/22d33209f4c041691b41733d06b090207244a803/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
