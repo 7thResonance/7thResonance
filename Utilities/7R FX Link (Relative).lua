@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.03
 @changelog - fixed error when selecting media item.
-@donation https://paypal.me/7thresonance
 @about Links the same FX on selected track.
 
 Original script by zaibuyidao.

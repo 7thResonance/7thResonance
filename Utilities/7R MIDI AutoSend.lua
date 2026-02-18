@@ -5,7 +5,6 @@
 @changelog - Re; Stricter clean up when selection changes.
     - Re; Added exit clean up
 @link Youtube Video https://www.youtube.com/watch?v=u1325Y-tJZQ
-@donation https://paypal.me/7thresonance
 @about MIDI Auto Send from selected track to Specific track
     Original Script made by Heda. This script allows to send MIDI back to hardware faders. (assuming it supports midi receives and motorised faders positioning themselves)
 

@@ -4,7 +4,6 @@
 @version 1.2
 @changelog
      - Improve Search and folder expansion behaviour
-@donation https://paypal.me/7thresonance
 @about Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager
    I have added a few extra features.
       - Search and load MIDInotename files right inside the script.

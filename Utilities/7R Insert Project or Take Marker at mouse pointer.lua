@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.1
 @changelog Takes item offset into account
-@donation https://paypal.me/7thresonance
 @about Allows to add markers on items themselves or the ruler (project markers), just point and press shortcut!
 --]]
 function Main()

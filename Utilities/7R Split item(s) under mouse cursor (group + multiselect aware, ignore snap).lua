@@ -2,7 +2,6 @@
 @description 7R Split item(s) under mouse cursor (group + multiselect, ignore snap, no change in selection)
 @author 7thResonance
 @version 1.0
-@donation https://paypal.me/7thresonance
 @about
   Splits media items at the mouse cursor position while ignoring snap.
 

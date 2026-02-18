@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 0.52
 @changelog - Added media file cleanup utility (experimental, use with caution)
-@donation https://paypal.me/7thresonance
 @screenshot Window https://i.postimg.cc/qRNQ9926/Screenshot-2025-08-23-001441.png
 @about A GUI to save versions of the project to a table and recall them.
     It saves a project into a custom format file (.7rvm)[AI thought of this name lmao, literaly 7thResonance version manager LMAO].

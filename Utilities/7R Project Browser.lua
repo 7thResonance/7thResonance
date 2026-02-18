@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.0
 @changelog - initial
-@donation https://paypal.me/7thresonance
 @screenshot Window https://i.postimg.cc/W1D3q8m6/Screenshot-2025-08-23-002124.png
 @about A simple GUI to view and load projects.
     - Select Root Master folder.

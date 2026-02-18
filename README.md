@@ -14,8 +14,6 @@ Github: https://github.com/7thResonance/7thResonance
 
 Discord: https://discord.com/invite/Y7MWJgB4mc
 
-Donation https://paypal.me/7thresonance
-
 
 Scripts;
 
@@ -33,8 +31,12 @@ Insert Track Templates - GUI to add template tracks
 
 Control Sends of Selected Track - Allows controlling send volume of many tracks at once
 
-Adds [Frozen] to Frozen Track's Name - Add ' [Frozen] to Frozen tracks, removes it when thawed
-
 Marker Exporter - GUI to export Project/Take Markers and Regions.
 
 FX Link - Links selected Track's Focused FX (relative)
+
+Project Broswer
+
+Project Version Manager
+
+FX send manager

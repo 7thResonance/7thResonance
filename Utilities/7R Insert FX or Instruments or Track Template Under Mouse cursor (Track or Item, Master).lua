@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 3.6
 @changelog - jsfx naming fix
-@donation https://paypal.me/7thresonance
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed

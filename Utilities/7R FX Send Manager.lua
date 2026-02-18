@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.1
 @changelog - Added pause to work with other background send scripts
-@donation https://paypal.me/7thresonance
 @about Opens GUI to mark tracks to be a FX send target
     - Autoloads marked tracks on new projects
     - Saves position and size of GUI

@@ -2,7 +2,6 @@
 @description 7R Freeze Instruments to Stereo (Other FX Online)
 @author 7thResonance
 @version 1.3
-@donation https://paypal.me/7thresonance
 @changelog -Removed the channel count edit. Uses native freeze function anyway
 @about Freezes Selected tracks. up to Instrument, Other FX are brough online after freezing.
 

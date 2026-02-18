@@ -8,7 +8,6 @@
   Double-click to insert track templates into the current project.
 @changelog - added font size setting
            - remember last search term setting 
-@donation https://paypal.me/7thresonance
 @screenshot Window https://i.postimg.cc/Y25QbqXX/Screenshot-2025-07-12-213753.png
 --]]
 

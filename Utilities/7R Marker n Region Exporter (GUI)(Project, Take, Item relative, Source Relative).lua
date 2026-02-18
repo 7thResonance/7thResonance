@@ -4,7 +4,6 @@
 @version 1.8
 @changelog
   - Imgui update Fix
-@donation https://paypal.me/7thresonance
 @about GUI for exporting project and take markers and Regions in various formats.
   - HH:MM:SS
   - HH:MM:SS:MS

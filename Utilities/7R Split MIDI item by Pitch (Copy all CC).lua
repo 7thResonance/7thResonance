@@ -3,7 +3,6 @@
 @author 7thResonance
 @version 1.1
 @changelog - Copies Sends and recieves as well
-@donation https://paypal.me/7thresonance
 @about Creates tracks for each pitch in selected MIDI items, copying all CC and text events.
 --]]
 
