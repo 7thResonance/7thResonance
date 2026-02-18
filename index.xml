@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="22d33209f4c041691b41733d06b090207244a803">
+<index version="1" name="7thResonance" commit="6f0a86a14f7f468e339f564eddf60a298391da98">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -312,6 +312,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="3.5" author="7thResonance" time="2026-01-04T08:20:08Z">
         <changelog><![CDATA[- Added "remeber last search term" setting]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/37eaebe39f270e6af5e9243a388bad7d5edbe0fb/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
+      </version>
+      <version name="3.6" author="7thResonance" time="2026-02-18T14:04:42Z">
+        <changelog><![CDATA[- jsfx naming fix]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/6f0a86a14f7f468e339f564eddf60a298391da98/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert Instrument (Respecting Folders).lua" type="script" desc="7R Insert Instrument (Respecting Folders)">
