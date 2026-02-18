@@ -1,8 +1,8 @@
 --[[
 @description 7R Project Version Manager
 @author 7thResonance
-@version 0.51
-@changelog - Initialise
+@version 0.52
+@changelog - Added media file cleanup utility (experimental, use with caution)
 @donation https://paypal.me/7thresonance
 @screenshot Window https://i.postimg.cc/qRNQ9926/Screenshot-2025-08-23-001441.png
 @about A GUI to save versions of the project to a table and recall them.
@@ -23,6 +23,7 @@
         - Active tag detection
         - Post save detection and autocopy (during opening of GUI)
         - Position and size is remembered
+        - Media file cleanup utility (experimental, use with caution)
 
     Do not use this script for important projects, still needs a lot of testing. thats why the version is 0.51
 --]]
@@ -82,6 +83,9 @@ end
 local RenameIndex = nil
 local RenameInput = ""
 local DeleteIndex = nil
+local UnusedWindowOpen = false
+local UnusedRows = {}
+local UnusedReport = { scanned_projects = 0, referenced_files = 0, candidate_files = 0, skipped_zip_projects = 0, source_scope = "" }
 
 -- Runtime tracking of open projects (for Save/Save As detection)
 VM.OpenState = VM.OpenState or {}   -- keyed by ReaProject*; values: { lastPath = "..." }
@@ -228,6 +232,25 @@ local function file_exists(path)
   local f = io.open(path, "rb")
   if f then f:close(); return true end
   return false
+end
+
+local function path_is_abs(p)
+  if not p or p == "" then return false end
+  if p:match("^%a:[/\\]") then return true end
+  if p:match("^[/\\][/\\]") then return true end
+  if p:sub(1,1) == "/" then return true end
+  return false
+end
+
+local function path_relative_to(root, full)
+  local rn = normalize_path(root or "")
+  local fn = normalize_path(full or "")
+  if rn ~= "" and fn:sub(1, #rn) == rn then
+    local rel = (full or ""):sub(#(root or "") + 1)
+    rel = rel:gsub("^[/\\]+", "")
+    if rel ~= "" then return rel end
+  end
+  return full or ""
 end
 
 -- Manifest-with-blobs constants and helpers
@@ -448,7 +471,7 @@ end
 local function append_file_to_container_streamed(container_path, project_path)
   local offset = file_size(container_path) or 0
 
-  local cf = io.open(container_path, "ab"); if not cf then return nil, nil, "open container append failed" end
+  local cf, cerr = io.open(container_path, "ab"); if not cf then return nil, nil, ("open container append failed for %s: %s"):format(container_path, tostring(cerr)) end
   local pf = io.open(project_path, "rb"); if not pf then cf:close(); return nil, nil, "open project failed" end
 
   local total = 0
@@ -567,6 +590,238 @@ local function get_container_path_for_master(master_path)
   return path_join(d, base .. VM.CONTAINER_EXT)
 end
 
+-- Forward declaration: used by unused-file analysis before implementation appears.
+local load_container
+
+local function iter_files_recursive(root_dir, out)
+  if not root_dir or root_dir == "" then return end
+  out = out or {}
+  local function walk(dir)
+    local i = 0
+    while true do
+      local f = reaper.EnumerateFiles(dir, i)
+      if not f then break end
+      out[#out+1] = path_join(dir, f)
+      i = i + 1
+    end
+    local j = 0
+    while true do
+      local sub = reaper.EnumerateSubdirectories(dir, j)
+      if not sub then break end
+      walk(path_join(dir, sub))
+      j = j + 1
+    end
+  end
+  walk(root_dir)
+  return out
+end
+
+local CleanupExts = {
+  [".wav"] = true, [".wave"] = true, [".flac"] = true, [".mp3"] = true, [".ogg"] = true, [".opus"] = true,
+  [".aif"] = true, [".aiff"] = true, [".caf"] = true, [".w64"] = true, [".wv"] = true,
+  [".mid"] = true, [".midi"] = true, [".rex"] = true, [".rx2"] = true,
+  [".mp4"] = true, [".mov"] = true, [".avi"] = true, [".mkv"] = true, [".webm"] = true,
+  [".reapeaks"] = true,
+}
+
+local function file_ext(path)
+  local e = (path or ""):match("(%.[^%./\\]+)$")
+  return e and e:lower() or ""
+end
+
+local function resolve_ref_path(raw_ref, proj_path)
+  if not raw_ref or raw_ref == "" then return nil end
+  local ref = raw_ref:gsub('\\"', '"')
+  ref = ref:gsub("/", sep())
+  ref = ref:gsub("^%s+", ""):gsub("%s+$", "")
+  if ref == "" then return nil end
+  if not path_is_abs(ref) then
+    local base = path_dirname(proj_path or "")
+    ref = path_join(base, ref)
+  end
+  return ref
+end
+
+local function collect_refs_from_open_projects(ref_set, report)
+  local added = 0
+  local i = 0
+  while true do
+    local proj = reaper.EnumProjects(i, "")
+    if not proj then break end
+
+    report.scanned_projects = report.scanned_projects + 1
+    local tr_count = reaper.CountTracks(proj) or 0
+    for t = 0, tr_count - 1 do
+      local tr = reaper.GetTrack(proj, t)
+      local item_count = reaper.CountTrackMediaItems(tr) or 0
+      for it = 0, item_count - 1 do
+        local item = reaper.GetTrackMediaItem(tr, it)
+        local tk_count = reaper.CountTakes(item) or 0
+        for k = 0, tk_count - 1 do
+          local take = reaper.GetTake(item, k)
+          if take then
+            local src = reaper.GetMediaItemTake_Source(take)
+            if src then
+              local a, b = reaper.GetMediaSourceFileName(src, "")
+              local p = ""
+              if type(a) == "string" then
+                p = a
+              elseif type(b) == "string" then
+                p = b
+              end
+              if p ~= "" then
+                local abs = resolve_ref_path(p, "")
+                local np = normalize_path(abs)
+                if np ~= "" and not ref_set[np] then
+                  ref_set[np] = true
+                  added = added + 1
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+
+    i = i + 1
+  end
+  return added
+end
+
+local function collect_rpp_file_refs(bytes, proj_path, ref_set)
+  if not bytes or bytes == "" then return 0 end
+  -- Binary zip payloads are unsupported here; caller tracks skips.
+  if bytes:sub(1, 2) == "PK" then return -1 end
+
+  local count = 0
+  for line in bytes:gmatch("[^\r\n]+") do
+    local p = line:match('FILE%s+"(.-)"')
+    if not p then p = line:match("FILE%s+([^%s][^%c]*)") end
+    if p and p ~= "" then
+      local abs = resolve_ref_path(p, proj_path)
+      if abs and abs ~= "" then
+        local np = normalize_path(abs)
+        if not ref_set[np] then
+          ref_set[np] = true
+          count = count + 1
+        end
+      end
+    end
+  end
+  return count
+end
+
+local function analyze_unused_files(master_path, container_path)
+  local report = {
+    scanned_projects = 0,
+    referenced_files = 0,
+    candidate_files = 0,
+    skipped_zip_projects = 0,
+    source_scope = path_dirname(master_path or ""),
+  }
+  local scope_dir = report.source_scope
+  if not scope_dir or scope_dir == "" then
+    return {}, report, "Missing master project directory."
+  end
+
+  local refs = {}
+  local function collect_from_project_bytes(bytes, proj_path)
+    report.scanned_projects = report.scanned_projects + 1
+    local found = collect_rpp_file_refs(bytes, proj_path, refs)
+    if found == -1 then
+      report.skipped_zip_projects = report.skipped_zip_projects + 1
+    end
+  end
+
+  if file_exists(master_path) then
+    local mbytes = file_read_bytes(master_path)
+    if mbytes then collect_from_project_bytes(mbytes, master_path) end
+  end
+
+  -- Include all currently open projects (in-memory state), so unsaved edits are considered.
+  collect_refs_from_open_projects(refs, report)
+
+  if container_path and container_path ~= "" and file_exists(container_path) then
+    local cont_tbl = load_container(container_path, master_path)
+    if cont_tbl and cont_tbl.versions then
+      for _, v in ipairs(cont_tbl.versions) do
+        if v.blob_offset and v.blob_size and v.blob_size > 0 then
+          local bytes = _read_blob(container_path, v.blob_offset, v.blob_size)
+          if bytes then
+            local stem = (v.name and v.name ~= "" and v.name) or "version"
+            local pseudo_proj = path_join(scope_dir, stem .. (v.ext or ".rpp"))
+            collect_from_project_bytes(bytes, pseudo_proj)
+          end
+        end
+      end
+    end
+  end
+
+  -- Also scan all saved project files in the master folder tree.
+  -- This catches newly saved local variants that are not yet copied into the container.
+  local scope_files = iter_files_recursive(scope_dir, {})
+  for _, p in ipairs(scope_files or {}) do
+    local pn = normalize_path(p)
+    local is_proj = pn:match("%.rpp$") or pn:match("%.rpp%-zip$")
+    local is_sidecar = pn:match("%.7rvm%.meta$")
+    local is_container = (container_path and container_path ~= "" and pn == normalize_path(container_path))
+    if is_proj and (not is_sidecar) and (not is_container) then
+      local bytes = file_read_bytes(p)
+      if bytes then
+        collect_from_project_bytes(bytes, p)
+      end
+    end
+  end
+
+  local ref_count = 0
+  for _ in pairs(refs) do ref_count = ref_count + 1 end
+  report.referenced_files = ref_count
+
+  local files = scope_files
+  local rows = {}
+  for _, f in ipairs(files or {}) do
+    local ext = file_ext(f)
+    if CleanupExts[ext] then
+      report.candidate_files = report.candidate_files + 1
+      local nf = normalize_path(f)
+      local used = refs[nf] and true or false
+      if (not used) and ext == ".reapeaks" then
+        local base = nf:gsub("%.reapeaks$", "")
+        if refs[base] then used = true end
+      end
+      if not used then
+        rows[#rows+1] = {
+          path = f,
+          size = file_size(f) or 0,
+          selected = false,
+          error = "",
+        }
+      end
+    end
+  end
+
+  table.sort(rows, function(a, b) return normalize_path(a.path) < normalize_path(b.path) end)
+  return rows, report, nil
+end
+
+local function delete_unused_rows(delete_all)
+  local deleted, failed = 0, 0
+  for i = #UnusedRows, 1, -1 do
+    local row = UnusedRows[i]
+    if row and (delete_all or row.selected) then
+      local ok, err = os.remove(row.path)
+      if ok then
+        table.remove(UnusedRows, i)
+        deleted = deleted + 1
+      else
+        row.error = tostring(err or "delete failed")
+        failed = failed + 1
+      end
+    end
+  end
+  return deleted, failed
+end
+
 local function get_workspace_root()
   local base = path_join(reaper.GetResourcePath(), "7RVM_workspace")
   ensure_dir(base)
@@ -645,11 +900,14 @@ end
 --   }
 -- }
 
-local function load_container(container_path, master_path)
+load_container = function(container_path, master_path)
   -- Ensure or detect new-format container first
   if not file_exists(container_path) then
     local ok, err = _write_new_container(container_path, master_path or get_current_project_path())
-    if not ok then return nil, "Failed to create container: " .. tostring(err) end
+    if not ok then
+      return nil, ("Failed to create container at %s. Reason: %s. Hints: ensure folder is writable (not Program Files/OneDrive-protected), and path is not too long.")
+        :format(container_path, tostring(err))
+    end
     return { schema = VM.SCHEMA, master = { path = master_path or get_current_project_path(), name = path_stem(path_basename(master_path or get_current_project_path())) }, versions = {} }
   end
 
@@ -1258,6 +1516,82 @@ local function delete_version(container_path, index)
   return true
 end
 
+local function draw_unused_files_window(master_path, container_path)
+  if not UnusedWindowOpen then return end
+
+  local visible, open = ImGui.Begin(ctx, "Delete Unused Files", true)
+  if visible then
+    ImGui.Text(ctx, "Scope: " .. (UnusedReport.source_scope or path_dirname(master_path or "")))
+    ImGui.Text(ctx, string.format(
+      "Scanned projects: %d  |  Referenced files: %d  |  Candidates: %d  |  Zip projects skipped: %d",
+      tonumber(UnusedReport.scanned_projects or 0),
+      tonumber(UnusedReport.referenced_files or 0),
+      tonumber(UnusedReport.candidate_files or 0),
+      tonumber(UnusedReport.skipped_zip_projects or 0)
+    ))
+    ImGui.Separator(ctx)
+
+    if ImGui.Button(ctx, "Analyze") then
+      local rows, report, err = analyze_unused_files(master_path, container_path)
+      if err then
+        StatusMsg = "Unused scan failed: " .. tostring(err)
+      else
+        UnusedRows = rows
+        UnusedReport = report
+        StatusMsg = string.format("Unused scan complete: %d file(s) found.", #UnusedRows)
+      end
+    end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Select All") then
+      for _, r in ipairs(UnusedRows) do r.selected = true end
+    end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Select None") then
+      for _, r in ipairs(UnusedRows) do r.selected = false end
+    end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Delete Selected") then
+      local d, f = delete_unused_rows(false)
+      StatusMsg = string.format("Delete selected: removed %d, failed %d.", d, f)
+    end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Delete All") then
+      local d, f = delete_unused_rows(true)
+      StatusMsg = string.format("Delete all: removed %d, failed %d.", d, f)
+    end
+
+    ImGui.Separator(ctx)
+    if #UnusedRows == 0 then
+      ImGui.Text(ctx, "No unused files listed. Click Analyze to refresh.")
+    else
+      local flags = ImGui.TableFlags_Borders | ImGui.TableFlags_RowBg | ImGui.TableFlags_ScrollY | ImGui.TableFlags_SizingStretchProp
+      if ImGui.BeginTable(ctx, "unused_files_tbl", 4, flags, 0, 360) then
+        ImGui.TableSetupColumn(ctx, "Sel", ImGui.TableColumnFlags_WidthFixed, 50)
+        ImGui.TableSetupColumn(ctx, "Size", ImGui.TableColumnFlags_WidthFixed, 90)
+        ImGui.TableSetupColumn(ctx, "Path", ImGui.TableColumnFlags_WidthStretch, 600)
+        ImGui.TableSetupColumn(ctx, "Status", ImGui.TableColumnFlags_WidthStretch, 180)
+        ImGui.TableHeadersRow(ctx)
+
+        local root = UnusedReport.source_scope or path_dirname(master_path or "")
+        for i, row in ipairs(UnusedRows) do
+          ImGui.TableNextRow(ctx)
+          ImGui.TableSetColumnIndex(ctx, 0)
+          local changed, val = ImGui.Checkbox(ctx, "##unused_sel_" .. tostring(i), row.selected or false)
+          if changed then row.selected = val end
+          ImGui.TableSetColumnIndex(ctx, 1); ImGui.Text(ctx, string.format("%.1f KB", (row.size or 0) / 1024))
+          ImGui.TableSetColumnIndex(ctx, 2); ImGui.Text(ctx, path_relative_to(root, row.path))
+          if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, row.path) end
+          ImGui.TableSetColumnIndex(ctx, 3); ImGui.Text(ctx, row.error or "")
+        end
+        ImGui.EndTable(ctx)
+      end
+    end
+  end
+  ImGui.End(ctx)
+
+  UnusedWindowOpen = open
+end
+
 local function draw_toolbar(master_path, container_path, cont_tbl)
   if ImGui.Button(ctx, "Save New") then
     local ok, err = save_new_version(container_path, nil)
@@ -1307,6 +1641,18 @@ local function draw_toolbar(master_path, container_path, cont_tbl)
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Settings") then
     ImGui.OpenPopup(ctx, "7RVM Settings")
+  end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Delete Unused Files") then
+    local rows, report, err = analyze_unused_files(master_path, container_path)
+    UnusedWindowOpen = true
+    if err then
+      StatusMsg = "Unused scan failed: " .. tostring(err)
+    else
+      UnusedRows = rows
+      UnusedReport = report
+      StatusMsg = string.format("Unused scan complete: %d file(s) found.", #UnusedRows)
+    end
   end
 
   -- Popup for naming
@@ -1542,6 +1888,7 @@ local function draw_body()
   ImGui.Separator(ctx)
 
   draw_versions_table(master_path, container_path, cont_tbl)
+  draw_unused_files_window(master_path, container_path)
 
   if StatusMsg ~= "" then
     ImGui.Separator(ctx)
