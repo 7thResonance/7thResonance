@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="d8848dbf23eb1974ef462ec700f0fa584c3023c8">
+<index version="1" name="7thResonance" commit="fdf0eb5cbcc9a778439759e099e44666e0809680">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -139,52 +139,8 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/661900acb675d14df443653d6ee5ddd4727d1f92/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
-    <reapack name="7R Tubify.jsfx" type="effect" desc="7R Tubify (Multiband Saturator)">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Simple atan-based Multiband Saturator\par}
-}
-]]></description>
-      </metadata>
-      <version name="1.0" author="7thResonance" time="2025-09-21T14:43:03Z">
-        <source>https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/67407b753ba42d36d656c1da8829b3ebce560fb2/JSFX/7R%20Tubify.jsfx</source>
-      </version>
-      <version name="1.1" time="2025-09-21T15:42:58Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/7210df482a75e3742224b3dcf95b18c794642178/JSFX/7R%20Tubify.jsfx</source>
-      </version>
-      <version name="1.2" time="2025-09-21T16:08:18Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/93c7fd54d6776ba03ec3e5b0212b9140ac77bb0f/JSFX/7R%20Tubify.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2025-09-29T11:47:42Z">
-        <changelog><![CDATA[Added bias, high pass and highpass bypass lol]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/067910ad59efeceb9136da2d0c15a12d6f15846b/JSFX/7R%20Tubify.jsfx</source>
-      </version>
-    </reapack>
   </category>
   <category name="Track">
-    <reapack name="7R Adds [Frozen] to Frozen Track's Name.lua" type="script" desc="7R Adds/Removes [Frozen] to Frozen Track's Name based on Undo History">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Automatically appends or removes " [Frozen]" in track names when freeze/unfreeze actions are detected in the undo history.\par}
-}
-]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
-      </metadata>
-      <version name="1.0" author="7thResonance" time="2025-07-01T23:43:31Z">
-        <changelog><![CDATA[initial]]></changelog>
-        <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/80aa776e9e64eed909af2fafcac0f1ede62d73ff/Track/7R%20Adds%20%5BFrozen%5D%20to%20Frozen%20Track's%20Name.lua</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2025-07-02T23:49:49Z">
-        <changelog><![CDATA[Reacts to Undo History: adds [Frozen] when tracks are frozen, removes it when unfrozen. SWS required.]]></changelog>
-        <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/c704d6537c1ad02ee6d428ac3df88a0802d2823d/Track/7R%20Adds%20%5BFrozen%5D%20to%20Frozen%20Track's%20Name.lua</source>
-      </version>
-    </reapack>
     <reapack name="7R Control Sends of Selected Track.lua" type="script" desc="7R Control Send volume of Selected Track">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
@@ -305,25 +261,6 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.1" author="7thResonance" time="2025-11-14T09:33:55Z">
         <changelog><![CDATA[- Added pause to work with other background send scripts]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/33465f03a897c16472d4edad015ad130e77bc28d/Utilities/7R%20FX%20Send%20Manager.lua</source>
-      </version>
-    </reapack>
-    <reapack name="7R Hide Envelopes of Folder track when collapsed.lua" type="script" desc="7R Hide Envelopes of Folder track when collapsed">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Intented to use with colcollapsed folders. Hides the automation from the folder. Autocollapse mode when height is below threshold. Set these values at the top of the script. autoCollapse = 0, change to 1 to enable autocollapse.\par}
-}
-]]></description>
-        <link rel="donation">https://paypal.me/7thresonance</link>
-      </metadata>
-      <version name="1.0" author="7thResonance" time="2025-11-25T09:27:56Z">
-        <source main="main">https://github.com/7thResonance/7thResonance/raw/29dc83ed1ba5891e45c8afc005de1ccc78cc6d03/Utilities/7R%20Hide%20Envelopes%20of%20Folder%20track%20when%20collapsed.lua</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2025-11-29T18:18:52Z">
-        <changelog><![CDATA[- Autocollapse mode. (disabled by default)]]></changelog>
-        <source main="main">https://github.com/7thResonance/7thResonance/raw/bce685e101aaa476b4d2d82d4edfd867cf111fcb/Utilities/7R%20Hide%20Envelopes%20of%20Folder%20track%20when%20collapsed.lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert FX or Instruments or Track Template Under Mouse cursor (Track or Item, Master).lua" type="script" desc="7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)">
