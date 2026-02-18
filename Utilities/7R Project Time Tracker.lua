@@ -1,9 +1,9 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.1
-@changelog - Added Simple work/break timer with auto-start.
-     - 
+@version 1.2
+@changelog - Work timer settings are now saved properly
+     - Added double click on sliders to enter value directly via input box
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
@@ -29,6 +29,7 @@ end
 
 -- ProjExtState section name (must be consistent)
 local EXT_SECTION = "7R_PROJECT_TIME_TRACKER"
+local GLOBAL_SETTINGS_PREFIX = "global_"
 
 local settings = {
   font_name = "Arial",
@@ -103,31 +104,37 @@ end
 local function load_settings(proj)
   if not proj or not reaper.ValidatePtr(proj, "ReaProject*") then return end
 
-  local _, font_name = reaper.GetProjExtState(proj, EXT_SECTION, "font_name")
+  local function get_setting(key)
+    local _, proj_val = reaper.GetProjExtState(proj, EXT_SECTION, key)
+    if proj_val ~= "" then return proj_val end
+    return reaper.GetExtState(EXT_SECTION, GLOBAL_SETTINGS_PREFIX .. key)
+  end
+
+  local font_name = get_setting("font_name")
   if font_name ~= "" then settings.font_name = font_name end
 
-  local _, size_str = reaper.GetProjExtState(proj, EXT_SECTION, "font_size")
+  local size_str = get_setting("font_size")
   settings.font_size = tonumber(size_str) or settings.font_size or 12
 
-  local _, afk_str = reaper.GetProjExtState(proj, EXT_SECTION, "afk_seconds")
+  local afk_str = get_setting("afk_seconds")
   settings.afk_seconds = tonumber(afk_str) or settings.afk_seconds or 5
 
-  local _, enable_timer = reaper.GetProjExtState(proj, EXT_SECTION, "enable_work_timer")
+  local enable_timer = get_setting("enable_work_timer")
   settings.enable_work_timer = ext_to_bool(enable_timer, settings.enable_work_timer)
 
-  local _, work_minutes = reaper.GetProjExtState(proj, EXT_SECTION, "work_minutes")
+  local work_minutes = get_setting("work_minutes")
   settings.work_minutes = tonumber(work_minutes) or settings.work_minutes or 25
 
-  local _, break_minutes = reaper.GetProjExtState(proj, EXT_SECTION, "break_minutes")
+  local break_minutes = get_setting("break_minutes")
   settings.break_minutes = tonumber(break_minutes) or settings.break_minutes or 5
 
-  local _, auto_start_work = reaper.GetProjExtState(proj, EXT_SECTION, "auto_start_work")
+  local auto_start_work = get_setting("auto_start_work")
   settings.auto_start_work = ext_to_bool(auto_start_work, settings.auto_start_work)
 
-  local _, auto_start_break = reaper.GetProjExtState(proj, EXT_SECTION, "auto_start_break")
+  local auto_start_break = get_setting("auto_start_break")
   settings.auto_start_break = ext_to_bool(auto_start_break, settings.auto_start_break)
 
-  local _, animation_enable = reaper.GetProjExtState(proj, EXT_SECTION, "animation_enable")
+  local animation_enable = get_setting("animation_enable")
   settings.animation_enable = ext_to_bool(animation_enable, settings.animation_enable)
 
   if settings.work_minutes < 1 then settings.work_minutes = 1 end
@@ -138,15 +145,21 @@ end
 
 local function save_settings(proj)
   if not proj or not reaper.ValidatePtr(proj, "ReaProject*") then return end
-  reaper.SetProjExtState(proj, EXT_SECTION, "font_name", settings.font_name or "Arial")
-  reaper.SetProjExtState(proj, EXT_SECTION, "font_size", tostring(settings.font_size or 12))
-  reaper.SetProjExtState(proj, EXT_SECTION, "afk_seconds", tostring(settings.afk_seconds or 5))
-  reaper.SetProjExtState(proj, EXT_SECTION, "enable_work_timer", settings.enable_work_timer and "1" or "0")
-  reaper.SetProjExtState(proj, EXT_SECTION, "work_minutes", tostring(settings.work_minutes or 25))
-  reaper.SetProjExtState(proj, EXT_SECTION, "break_minutes", tostring(settings.break_minutes or 5))
-  reaper.SetProjExtState(proj, EXT_SECTION, "auto_start_work", settings.auto_start_work and "1" or "0")
-  reaper.SetProjExtState(proj, EXT_SECTION, "auto_start_break", settings.auto_start_break and "1" or "0")
-  reaper.SetProjExtState(proj, EXT_SECTION, "animation_enable", settings.animation_enable and "1" or "0")
+  local function save_setting(key, value)
+    local str = tostring(value)
+    reaper.SetProjExtState(proj, EXT_SECTION, key, str)
+    reaper.SetExtState(EXT_SECTION, GLOBAL_SETTINGS_PREFIX .. key, str, true)
+  end
+
+  save_setting("font_name", settings.font_name or "Arial")
+  save_setting("font_size", settings.font_size or 12)
+  save_setting("afk_seconds", settings.afk_seconds or 5)
+  save_setting("enable_work_timer", settings.enable_work_timer and "1" or "0")
+  save_setting("work_minutes", settings.work_minutes or 25)
+  save_setting("break_minutes", settings.break_minutes or 5)
+  save_setting("auto_start_work", settings.auto_start_work and "1" or "0")
+  save_setting("auto_start_break", settings.auto_start_break and "1" or "0")
+  save_setting("animation_enable", settings.animation_enable and "1" or "0")
 end
 
 local function load_time(proj)
@@ -538,12 +551,42 @@ local function main()
           timer_state.remaining = timer_duration_for_mode("work")
         end
       end
+      if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+        local ok, input = reaper.GetUserInputs("Work Time (min)", 1, "Minutes:", tostring(settings.work_minutes or 25))
+        if ok then
+          local v = tonumber(input)
+          if v then
+            v = math.floor(v + 0.5)
+            if v < 1 then v = 1 end
+            if v > 240 then v = 240 end
+            settings.work_minutes = v
+            if timer_state.mode == "work" then
+              timer_state.remaining = timer_duration_for_mode("work")
+            end
+          end
+        end
+      end
 
       local changed_break_mins, new_break_mins = reaper.ImGui_SliderInt(ctx, "Break Time (min)", settings.break_minutes or 5, 1, 120)
       if changed_break_mins then
         settings.break_minutes = new_break_mins
         if timer_state.mode == "break" then
           timer_state.remaining = timer_duration_for_mode("break")
+        end
+      end
+      if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+        local ok, input = reaper.GetUserInputs("Break Time (min)", 1, "Minutes:", tostring(settings.break_minutes or 5))
+        if ok then
+          local v = tonumber(input)
+          if v then
+            v = math.floor(v + 0.5)
+            if v < 1 then v = 1 end
+            if v > 120 then v = 120 end
+            settings.break_minutes = v
+            if timer_state.mode == "break" then
+              timer_state.remaining = timer_duration_for_mode("break")
+            end
+          end
         end
       end
 
