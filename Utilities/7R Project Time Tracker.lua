@@ -1,13 +1,14 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.2
-@changelog - Work timer settings are now saved properly
-     - Added double click on sliders to enter value directly via input box
+@version 1.3
+@changelog - Break timer doesnt look at AFK status.
+      - Replaced the arrow with double click to skip timer
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
   Simple work/break timer with auto-start.
+  Double click to skip to next work/break phase.
 
 --]]
 
@@ -415,8 +416,11 @@ local function main()
 
   if delta > 0 and delta < 10 then
     local afk = is_afk(proj, now)
-    if not afk then
+    local should_tick_timer = (not afk) or (timer_state.mode == "break")
+    if should_tick_timer then
       update_work_timer(delta, now)
+    end
+    if not afk then
       time_data.total = time_data.total + delta
     end
   end
@@ -457,14 +461,12 @@ local function main()
 
     if show_work_timer then
       local row_y = centered_y + text_h + line_gap
-      local arrow_w = 22
-      local arrow_gap = 0
 
       local is_flash = settings.animation_enable and (now < (timer_state.flash_until or 0))
       local is_waiting_autostart = (timer_state.autostart_due or 0) > now
 
       local work_btn_w = reaper.ImGui_CalcTextSize(ctx, work_timer_str) + 18
-      local row_w = work_btn_w + arrow_gap + arrow_w
+      local row_w = work_btn_w
       local row_x = cur_x + math.max(0, (avail_w - row_w) * 0.5)
 
       reaper.ImGui_SetCursorPos(ctx, row_x, row_y)
@@ -482,22 +484,18 @@ local function main()
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0xF2D663FF)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0xCCAF35FF)
       end
-      if reaper.ImGui_Button(ctx, work_timer_str, work_btn_w, 0) then
+      local timer_clicked = reaper.ImGui_Button(ctx, work_timer_str, work_btn_w, 0)
+      local timer_double_clicked = reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0)
+      if timer_double_clicked then
+        timer_state.autostart_due = 0
+        switch_work_timer(true, now)
+      elseif timer_clicked then
         timer_state.autostart_due = 0
         timer_state.running = not timer_state.running
       end
       if was_waiting_autostart or was_flash or was_paused then
         reaper.ImGui_PopStyleColor(ctx, 3)
       end
-
-      reaper.ImGui_SetCursorPos(ctx, row_x + work_btn_w + arrow_gap, row_y)
-      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x00000000)
-      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x00000000)
-      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x00000000)
-      if reaper.ImGui_Button(ctx, ">", arrow_w, 0) then
-        switch_work_timer(true, now)
-      end
-      reaper.ImGui_PopStyleColor(ctx, 3)
     end
 
     if font then reaper.ImGui_PopFont(ctx) end
