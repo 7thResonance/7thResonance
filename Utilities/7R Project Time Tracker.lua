@@ -1,9 +1,8 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.3
-@changelog - Break timer doesnt look at AFK status.
-      - Replaced the arrow with double click to skip timer
+@version 1.4
+@changelog - imgui problem that didnt occur in testing for some reason.
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
@@ -614,9 +613,6 @@ local function main()
       reaper.ImGui_EndPopup(ctx)
     end
 
-    reaper.ImGui_End(ctx)
-  else
-    -- Window collapsed; still need End()
     reaper.ImGui_End(ctx)
   end
 
