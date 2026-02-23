@@ -1,27 +1,25 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.9
+version: 1.10
 about: A simple K meter JSFX
-changelog: - Added sliders for colour divison ranges
-           - added text readout fade when no audio is palying
-           - Peak lines now follow meter colour
+changelog: - Added Peak/RMS, LUFS S, LUFS M modes
+           - Increased Scale Max range
 options:no_meter
 
 
 //------------------------------------------------
 // Sliders
 //------------------------------------------------
-slider1:1<0,2,1{K-12,K-14,K-20}>K Mode
+slider1:1<0,5,1{K-12,K-14,K-20,Peak/RMS,LUFS M,LUFS S}>Mode
 slider2:300<100,2000,50>RMS Integration (ms)
 slider3:600<50,5000,50>Peak Falloff (ms)
 slider4:300<0,5000,50>Peak Hold (ms)
 slider5:1<0,1,1{Off,On}>Show Readouts
-slider6:0<0,1,1{Off,On}>ITU Weighting for Meter
-slider7:-18<-120,0,1>Scale Min (K)
-slider8:18<0,48,1>Scale Max (K)
-slider9:3<1,12,1>Scale Step (dB)
-slider10:0<-120,48,1>Yellow Starts At (K)
-slider11:4<-120,48,1>Red Starts At (K)
+slider6:-18<-120,0,1>Scale Min (K)
+slider7:18<-48,48,1>Scale Max (K)
+slider8:3<1,12,1>Scale Step (dB)
+slider9:0<-120,48,1>Yellow Starts At (K)
+slider10:4<-120,48,1>Red Starts At (K)
 
 //------------------------------------------------
 // Constants
@@ -39,13 +37,18 @@ peak_out_l = 0;
 peak_out_r = 0;
 peak_hold_count_l = 0;
 peak_hold_count_r = 0;
-old_itu = 0;
 silence_l = 0;
 silence_r = 0;
 silence_count_l = 0;
 silence_count_r = 0;
 vis_alpha_l = 0;
 vis_alpha_r = 0;
+last_sr = 0;
+
+f1a1 = f1a2 = f1b0 = f1b1 = f1b2 = 0;
+f2a1 = f2a2 = f2b0 = f2b1 = f2b2 = 0;
+f1p1_l = f1p2_l = f2p1_l = f2p2_l = 0;
+f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
 
 //------------------------------------------------
 // Init
@@ -54,107 +57,105 @@ vis_alpha_r = 0;
 gfx_ext_flags |= 0x100 | 0x200;
 gfx_w = 30;
 gfx_h = 800;
+last_sr = srate;
+db = 3.999843853973347;
+f0 = 1681.974450955533;
+Q = 0.7071752369554196;
+K = tan($pi * f0 / srate);
+Vh = pow(10, db / 20);
+Vb = pow(Vh, 0.4996667741545416);
+a0 = 1 + K / Q + K * K;
+f1a1 = 2 * (K * K - 1) / a0;
+f1a2 = (1 - K / Q + K * K) / a0;
+f1b0 = (Vh + Vb * K / Q + K * K) / a0;
+f1b1 = 2 * (K * K - Vh) / a0;
+f1b2 = (Vh - Vb * K / Q + K * K) / a0;
 
-// ITU-R 468 weighting filter state memory (6 states per channel)
-itu_filter_mem = 0;
-itu_z_l0_u1 = itu_filter_mem;
-itu_z_l0_u2 = itu_z_l0_u1 + 1;
-itu_z_l1_u1 = itu_z_l0_u2 + 1;
-itu_z_l1_u2 = itu_z_l1_u1 + 1;
-itu_z_l2_u1 = itu_z_l1_u2 + 1;
-itu_z_l2_u2 = itu_z_l2_u1 + 1;
-itu_z_r0_u1 = itu_z_l2_u2 + 1;
-itu_z_r0_u2 = itu_z_r0_u1 + 1;
-itu_z_r1_u1 = itu_z_r0_u2 + 1;
-itu_z_r1_u2 = itu_z_r1_u1 + 1;
-itu_z_r2_u1 = itu_z_r1_u2 + 1;
-itu_z_r2_u2 = itu_z_r2_u1 + 1;
+f0 = 38.13547087602444;
+Q = 0.5003270373238773;
+K = tan($pi * f0 / srate);
+a0 = 1 + K / Q + K * K;
+f2a1 = 2 * (K * K - 1) / a0;
+f2a2 = (1 - K / Q + K * K) / a0;
+f2b0 = 1;
+f2b1 = -2;
+f2b2 = 1;
 
-// Hardcoded SOS coeffs (b0,b1,b2 | a0=1,a1,a2) for fs=48000
-sos0_b0 = 0.03895648;
-sos0_b1 = 0.07796198;
-sos0_b2 = 0.03900552;
-sos0_a1 = -0.78503289;
-sos0_a2 = 0.12076391;
+@block
+srate != last_sr ? (
+    last_sr = srate;
+    db = 3.999843853973347;
+    f0 = 1681.974450955533;
+    Q = 0.7071752369554196;
+    K = tan($pi * f0 / srate);
+    Vh = pow(10, db / 20);
+    Vb = pow(Vh, 0.4996667741545416);
+    a0 = 1 + K / Q + K * K;
+    f1a1 = 2 * (K * K - 1) / a0;
+    f1a2 = (1 - K / Q + K * K) / a0;
+    f1b0 = (Vh + Vb * K / Q + K * K) / a0;
+    f1b1 = 2 * (K * K - Vh) / a0;
+    f1b2 = (Vh - Vb * K / Q + K * K) / a0;
 
-sos1_b0 = 1.00000000;
-sos1_b1 = 1.99952035;
-sos1_b2 = 0.99952096;
-sos1_a1 = -0.93847268;
-sos1_a2 = 0.41986127;
-
-sos2_b0 = 1.00000000;
-sos2_b1 = -0.00077845;
-sos2_b2 = -0.99922155;
-sos2_a1 = -0.58162359;
-sos2_a2 = 0.57828378;
-
-i = 0;
-loop(12,
-    itu_filter_mem[i] = 0;
-    i += 1;
-);
-
-@slider
-slider6 != old_itu ? (
-    old_itu = slider6;
-    i = 0;
-    loop(12,
-        itu_filter_mem[i] = 0;
-        i += 1;
-    );
+    f0 = 38.13547087602444;
+    Q = 0.5003270373238773;
+    K = tan($pi * f0 / srate);
+    a0 = 1 + K / Q + K * K;
+    f2a1 = 2 * (K * K - 1) / a0;
+    f2a2 = (1 - K / Q + K * K) / a0;
+    f2b0 = 1;
+    f2b1 = -2;
+    f2b2 = 1;
+    f1p1_l = f1p2_l = f2p1_l = f2p2_l = 0;
+    f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
 );
 
 //------------------------------------------------
 // Audio
 //------------------------------------------------
 @sample
-slider6 > 0.5 ? (
-    // Left channel cascade
-    u0_l = spl0 - sos0_a1 * itu_z_l0_u1[0] - sos0_a2 * itu_z_l0_u2[0];
-    y0_l = sos0_b0 * u0_l + sos0_b1 * itu_z_l0_u1[0] + sos0_b2 * itu_z_l0_u2[0];
-    itu_z_l0_u2[0] = itu_z_l0_u1[0];
-    itu_z_l0_u1[0] = u0_l;
+lufs_mode = slider1 >= 4;
+lufs_mode ? (
+    // Left channel K-weighting
+    l_w = spl0;
+    f1p0_l = l_w - f1a1 * f1p1_l - f1a2 * f1p2_l;
+    l_w = f1b0 * f1p0_l + f1b1 * f1p1_l + f1b2 * f1p2_l;
+    f1p2_l = f1p1_l;
+    f1p1_l = f1p0_l;
 
-    u1_l = y0_l - sos1_a1 * itu_z_l1_u1[0] - sos1_a2 * itu_z_l1_u2[0];
-    y1_l = sos1_b0 * u1_l + sos1_b1 * itu_z_l1_u1[0] + sos1_b2 * itu_z_l1_u2[0];
-    itu_z_l1_u2[0] = itu_z_l1_u1[0];
-    itu_z_l1_u1[0] = u1_l;
+    f2p0_l = l_w - f2a1 * f2p1_l - f2a2 * f2p2_l;
+    l_w = f2b0 * f2p0_l + f2b1 * f2p1_l + f2b2 * f2p2_l;
+    f2p2_l = f2p1_l;
+    f2p1_l = f2p0_l;
 
-    u2_l = y1_l - sos2_a1 * itu_z_l2_u1[0] - sos2_a2 * itu_z_l2_u2[0];
-    y2_l = sos2_b0 * u2_l + sos2_b1 * itu_z_l2_u1[0] + sos2_b2 * itu_z_l2_u2[0];
-    itu_z_l2_u2[0] = itu_z_l2_u1[0];
-    itu_z_l2_u1[0] = u2_l;
+    // Right channel K-weighting
+    r_w = spl1;
+    f1p0_r = r_w - f1a1 * f1p1_r - f1a2 * f1p2_r;
+    r_w = f1b0 * f1p0_r + f1b1 * f1p1_r + f1b2 * f1p2_r;
+    f1p2_r = f1p1_r;
+    f1p1_r = f1p0_r;
 
-    filtered_l = y2_l;
+    f2p0_r = r_w - f2a1 * f2p1_r - f2a2 * f2p2_r;
+    r_w = f2b0 * f2p0_r + f2b1 * f2p1_r + f2b2 * f2p2_r;
+    f2p2_r = f2p1_r;
+    f2p1_r = f2p0_r;
 
-    // Right channel cascade
-    u0_r = spl1 - sos0_a1 * itu_z_r0_u1[0] - sos0_a2 * itu_z_r0_u2[0];
-    y0_r = sos0_b0 * u0_r + sos0_b1 * itu_z_r0_u1[0] + sos0_b2 * itu_z_r0_u2[0];
-    itu_z_r0_u2[0] = itu_z_r0_u1[0];
-    itu_z_r0_u1[0] = u0_r;
-
-    u1_r = y0_r - sos1_a1 * itu_z_r1_u1[0] - sos1_a2 * itu_z_r1_u2[0];
-    y1_r = sos1_b0 * u1_r + sos1_b1 * itu_z_r1_u1[0] + sos1_b2 * itu_z_r1_u2[0];
-    itu_z_r1_u2[0] = itu_z_r1_u1[0];
-    itu_z_r1_u1[0] = u1_r;
-
-    u2_r = y1_r - sos2_a1 * itu_z_r2_u1[0] - sos2_a2 * itu_z_r2_u2[0];
-    y2_r = sos2_b0 * u2_r + sos2_b1 * itu_z_r2_u1[0] + sos2_b2 * itu_z_r2_u2[0];
-    itu_z_r2_u2[0] = itu_z_r2_u1[0];
-    itu_z_r2_u1[0] = u2_r;
-
-    filtered_r = y2_r;
+    rms_in_l = l_w;
+    rms_in_r = r_w;
 ) : (
-    filtered_l = spl0;
-    filtered_r = spl1;
+    rms_in_l = spl0;
+    rms_in_r = spl1;
 );
 
 // RMS (energy-based)
-rms_tc = exp(-1 / (slider2 * 0.001 * srate));
-rms_acc_l = rms_tc * rms_acc_l + (1 - rms_tc) * (filtered_l * filtered_l);
+rms_window_ms =
+    slider1 == 4 ? 400 :
+    slider1 == 5 ? 3000 :
+                   slider2;
+rms_tc = exp(-1 / (rms_window_ms * 0.001 * srate));
+rms_acc_l = rms_tc * rms_acc_l + (1 - rms_tc) * (rms_in_l * rms_in_l);
 rms_out_l = sqrt(max(rms_acc_l, EPS));
-rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (filtered_r * filtered_r);
+rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (rms_in_r * rms_in_r);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
 
 // Peak with two-stage falloff:
@@ -208,34 +209,46 @@ small_mode = gfx_w<200*gfx_ext_retina || gfx_h<150*gfx_ext_retina;
 gfx_ext_retina>1 ? gfx_setfont(1,"Arial",16*gfx_ext_retina,'b') : gfx_setfont(0);
 
 // ----- K reference -----
+normal_mode = slider1 == 3;
+lufs_m_mode = slider1 == 4;
+lufs_s_mode = slider1 == 5;
+lufs_mode = slider1 >= 4;
+non_k_mode = slider1 >= 3;
 k_ref =
     slider1 == 0 ? 12 :
     slider1 == 1 ? 14 :
-                   20;
-
-k_display =
-    slider1 == 0 ? 12 :
-    slider1 == 1 ? 14 :
-                   20;
+    slider1 == 2 ? 20 :
+                   0;
 
 // ----- dB -----
-rms_db_l  = 20 * log10(rms_out_l) + 3;
-rms_db_r  = 20 * log10(rms_out_r) + 3;
+rms_db_l  = 20 * log10(rms_out_l);
+rms_db_r  = 20 * log10(rms_out_r);
 peak_db_l = 20 * log10(peak_out_l);
 peak_db_r = 20 * log10(peak_out_r);
 
-// ----- K mapping -----
-rms_k_l  = rms_db_l  + k_ref;
-rms_k_r  = rms_db_r  + k_ref;
-peak_k_l = peak_db_l + k_ref;
-peak_k_r = peak_db_r + k_ref;
+lufs_mode ? (
+    // BS.1770 stereo loudness uses summed weighted channel energies.
+    lufs_sum = max(rms_acc_l + rms_acc_r, EPS);
+    lufs_stereo_db = -0.691 + 10 * log10(lufs_sum);
+    rms_db_l = lufs_stereo_db;
+    rms_db_r = lufs_stereo_db;
+) : (
+    rms_db_l += 3;
+    rms_db_r += 3;
+);
 
-scale_min = slider7;
-scale_max = max(slider8, scale_min + 1);
+// ----- K mapping -----
+rms_k_l  = non_k_mode ? rms_db_l  : (rms_db_l  + k_ref);
+rms_k_r  = non_k_mode ? rms_db_r  : (rms_db_r  + k_ref);
+peak_k_l = non_k_mode ? peak_db_l : (peak_db_l + k_ref);
+peak_k_r = non_k_mode ? peak_db_r : (peak_db_r + k_ref);
+
+scale_min = slider6;
+scale_max = max(slider7, scale_min + 1);
 scale_span = scale_max - scale_min;
-scale_step = max(slider9, 1);
-thresh_yellow = slider10;
-thresh_red = max(slider11, thresh_yellow + 0.001);
+scale_step = max(slider8, 1);
+thresh_yellow = slider9;
+thresh_red = max(slider10, thresh_yellow + 0.001);
 
 rms_n_l  = (rms_k_l  - scale_min) / scale_span;
 rms_n_r  = (rms_k_r  - scale_min) / scale_span;
@@ -259,37 +272,51 @@ thresh_yellow_n = (thresh_yellow - scale_min) / scale_span;
 thresh_red_n = (thresh_red - scale_min) / scale_span;
 
 // Left bar
-green_h_l = min(rms_n_l, thresh_yellow_n) * meter_h;
-yellow_h_l = min(max(rms_n_l - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
-red_h_l = max(rms_n_l - thresh_red_n, 0) * meter_h;
+non_k_mode ? (
+    full_h_l = rms_n_l * meter_h;
+    gfx_set(0.20, 0.70, 1.00, 1);
+    gfx_rect(pad, meter_bottom - full_h_l, bar_w, full_h_l);
+) : (
+    green_h_l = min(rms_n_l, thresh_yellow_n) * meter_h;
+    yellow_h_l = min(max(rms_n_l - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
+    red_h_l = max(rms_n_l - thresh_red_n, 0) * meter_h;
 
-gfx_set(0.25, 0.85, 0.25, 1); // green
-gfx_rect(pad, meter_bottom - green_h_l, bar_w, green_h_l);
+    gfx_set(0.25, 0.85, 0.25, 1); // green
+    gfx_rect(pad, meter_bottom - green_h_l, bar_w, green_h_l);
 
-gfx_set(1, 1, 0.3, 1); // yellow
-gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l, bar_w, yellow_h_l);
+    gfx_set(1, 1, 0.3, 1); // yellow
+    gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l, bar_w, yellow_h_l);
 
-gfx_set(1, 0.3, 0.3, 1); // red
-gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l - red_h_l, bar_w, red_h_l);
+    gfx_set(1, 0.3, 0.3, 1); // red
+    gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l - red_h_l, bar_w, red_h_l);
+);
 
 // Right bar
-green_h_r = min(rms_n_r, thresh_yellow_n) * meter_h;
-yellow_h_r = min(max(rms_n_r - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
-red_h_r = max(rms_n_r - thresh_red_n, 0) * meter_h;
+non_k_mode ? (
+    full_h_r = rms_n_r * meter_h;
+    gfx_set(0.20, 0.70, 1.00, 1);
+    gfx_rect(pad + bar_w, meter_bottom - full_h_r, bar_w, full_h_r);
+) : (
+    green_h_r = min(rms_n_r, thresh_yellow_n) * meter_h;
+    yellow_h_r = min(max(rms_n_r - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
+    red_h_r = max(rms_n_r - thresh_red_n, 0) * meter_h;
 
-gfx_set(0.25, 0.85, 0.25, 1); // green
-gfx_rect(pad + bar_w, meter_bottom - green_h_r, bar_w, green_h_r);
+    gfx_set(0.25, 0.85, 0.25, 1); // green
+    gfx_rect(pad + bar_w, meter_bottom - green_h_r, bar_w, green_h_r);
 
-gfx_set(1, 1, 0.3, 1); // yellow
-gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r, bar_w, yellow_h_r);
+    gfx_set(1, 1, 0.3, 1); // yellow
+    gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r, bar_w, yellow_h_r);
 
-gfx_set(1, 0.3, 0.3, 1); // red
-gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
+    gfx_set(1, 0.3, 0.3, 1); // red
+    gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
+);
 
 // ----- Peak lines (L/R) -----
 peak_y_l = meter_bottom - (meter_h * peak_n_l);
 peak_y_r = meter_bottom - (meter_h * peak_n_r);
 
+non_k_mode ?
+    gfx_set(1.00, 0.90, 0.25, vis_alpha_l) :
 peak_k_l >= thresh_red ?
     gfx_set(1, 0.3, 0.3, vis_alpha_l) :
 peak_k_l >= thresh_yellow ?
@@ -297,6 +324,8 @@ peak_k_l >= thresh_yellow ?
     gfx_set(0.25, 0.85, 0.25, vis_alpha_l);
 gfx_line(pad, peak_y_l, pad + bar_w, peak_y_l);
 
+non_k_mode ?
+    gfx_set(1.00, 0.90, 0.25, vis_alpha_r) :
 peak_k_r >= thresh_red ?
     gfx_set(1, 0.3, 0.3, vis_alpha_r) :
 peak_k_r >= thresh_yellow ?
@@ -305,7 +334,7 @@ peak_k_r >= thresh_yellow ?
 gfx_line(pad + bar_w, peak_y_r, pad + meter_w, peak_y_r);
 
 //------------------------------------------------
-// Scale: user-defined dB increments with K-System colors
+// Scale: user-defined dB increments
 //------------------------------------------------
 steps = floor(scale_span / scale_step);
 i = 0;
@@ -319,11 +348,15 @@ loop(steps + 1,
     y = meter_bottom - (meter_h * n);
 
     // Set color based on K value
-    k_val >= thresh_red ?
-        gfx_set(1, 0.3, 0.3, 0.6) :     // red
-    k_val >= thresh_yellow ?
-        gfx_set(1, 1, 0.3, 0.6) :       // yellow
-        gfx_set(0.25, 0.85, 0.25, 0.6); // green
+    non_k_mode ? (
+        gfx_set(0.85, 0.85, 0.85, 0.35);
+    ) : (
+        k_val >= thresh_red ?
+            gfx_set(1, 0.3, 0.3, 0.6) :     // red
+        k_val >= thresh_yellow ?
+            gfx_set(1, 1, 0.3, 0.6) :       // yellow
+            gfx_set(0.25, 0.85, 0.25, 0.6); // green
+    );
 
     gfx_line(pad - 4, y, pad + meter_w + 4, y);
 
@@ -342,11 +375,15 @@ top_tick_needed ? (
     n = (k_val - scale_min) / scale_span;
     y = meter_bottom - (meter_h * n);
 
-    k_val >= thresh_red ?
-        gfx_set(1, 0.3, 0.3, 0.6) :
-    k_val >= thresh_yellow ?
-        gfx_set(1, 1, 0.3, 0.6) :
-        gfx_set(0.25, 0.85, 0.25, 0.6);
+    non_k_mode ? (
+        gfx_set(0.85, 0.85, 0.85, 0.35);
+    ) : (
+        k_val >= thresh_red ?
+            gfx_set(1, 0.3, 0.3, 0.6) :
+        k_val >= thresh_yellow ?
+            gfx_set(1, 1, 0.3, 0.6) :
+            gfx_set(0.25, 0.85, 0.25, 0.6);
+    );
 
     gfx_line(pad - 4, y, pad + meter_w + 4, y);
     gfx_x = 2;
@@ -361,6 +398,9 @@ slider5 > 0 ? (
     gfx_setfont(2,"Arial",12);
     text_alpha = 0.9 * max(vis_alpha_l, vis_alpha_r);
     gfx_set(1,1,1,text_alpha);
+    strcpy(#line2_lbl, "R ");
+    lufs_m_mode ? strcpy(#line2_lbl, "M ");
+    lufs_s_mode ? strcpy(#line2_lbl, "S ");
 
     disp_peak_db_l = silence_l ? -10000 : peak_db_l;
     disp_peak_db_r = silence_r ? -10000 : peak_db_r;
@@ -397,7 +437,7 @@ slider5 > 0 ? (
     gfx_printf(#rm_l);
     gfx_x = pad + bar_w - 2;
     gfx_y = y_rms;
-    gfx_printf("R ");
+    gfx_printf(#line2_lbl);
     gfx_x = pad + bar_w + (bar_w - rm_r_w) * 0.5 + 2;
     gfx_y = y_rms;
     gfx_printf(#rm_r);
