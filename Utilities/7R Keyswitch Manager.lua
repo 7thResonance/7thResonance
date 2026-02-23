@@ -1,9 +1,9 @@
 --[[
 @description 7R Keyswitch Manager
 @author 7thResonance
-@version 1.2
+@version 1.3
 @changelog
-     - Improve Search and folder expansion behaviour
+     - imgui error
 @about Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager
    I have added a few extra features.
       - Search and load MIDInotename files right inside the script.
@@ -1059,7 +1059,8 @@ local function loop()
 
                     if ActivatedKS[i] ~= nil then ImGui.PushStyleColor(ctx, ImGui.Col_Button, EnumThemeColors.G) end
 
-                    if ImGui.Button(ctx, articulation, 100) then
+                    local buttonLabel = tostring(articulation) .. "##ks_" .. tostring(i)
+                    if ImGui.Button(ctx, buttonLabel, 100) then
                         local isShiftHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Shift
                         local isCtrlHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Ctrl
                         local isAltHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Alt
