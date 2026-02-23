@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="403a55fab0e792c09f867ae0d6705fa59c27f41a">
+<index version="1" name="7thResonance" commit="c54f6594c738e5ef0c2aa675555f36d6d0ef7db0">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -110,6 +110,11 @@
 - added text readout fade when no audio is palying
 - Peak lines now follow meter colour]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/403a55fab0e792c09f867ae0d6705fa59c27f41a/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
+      </version>
+      <version name="1.10" author="7thResonance" time="2026-02-23T19:09:22Z">
+        <changelog><![CDATA[- Added Peak/RMS, LUFS S, LUFS M modes
+- Increased Scale Max range]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/c54f6594c738e5ef0c2aa675555f36d6d0ef7db0/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
