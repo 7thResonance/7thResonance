@@ -1,8 +1,8 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.4
-@changelog - imgui problem that didnt occur in testing for some reason.
+@version 1.5
+@changelog - Excluded record arm state from active time to avoid inflating time when armed but not actually recording.
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
@@ -54,7 +54,6 @@ local last_proj_id = nil
 local last_state_change = 0
 local editing = false
 local last_edit_activity = 0
-local armed_cached = false
 local add_minutes = 0
 
 local font = nil
@@ -173,17 +172,6 @@ local function load_time(proj)
   last_edit_activity = time_data.last_update
   last_state_change = reaper.GetProjectStateChangeCount(proj)
   editing = false
-end
-
-local function scan_armed_tracks(proj)
-  local tr_count = reaper.CountTracks(proj)
-  for i = 0, tr_count - 1 do
-    local track = reaper.GetTrack(proj, i)
-    if track and reaper.GetMediaTrackInfo_Value(track, "I_RECARM") == 1 then
-      return true
-    end
-  end
-  return false
 end
 
 local function save_time(proj)
@@ -371,13 +359,12 @@ local function is_afk(proj, now)
   if current_state_change > last_state_change then
     last_edit_activity = now or reaper.time_precise()
     last_state_change = current_state_change
-    armed_cached = scan_armed_tracks(proj)
   end
 
   local afk_seconds = tonumber(settings.afk_seconds) or 5
   if afk_seconds < 1 then afk_seconds = 1 end
   editing = ((now or reaper.time_precise()) - (last_edit_activity or 0)) <= afk_seconds
-  local active = playing or recording or armed_cached or editing
+  local active = playing or recording or editing
   editing = false
   return not active
 end
@@ -398,7 +385,6 @@ local function main()
     -- We rely on periodic autosave + explicit current-project saves instead.
     load_settings(proj)
     load_time(proj)
-    armed_cached = scan_armed_tracks(proj)
     reset_work_timer("work", settings.auto_start_work)
     last_proj = proj
     last_proj_id = proj_id
@@ -630,7 +616,6 @@ do
   if init_proj and reaper.ValidatePtr(init_proj, "ReaProject*") then
     load_settings(init_proj)
     load_time(init_proj)
-    armed_cached = scan_armed_tracks(init_proj)
     reset_work_timer("work", settings.auto_start_work)
     last_proj = init_proj
     last_proj_id = get_project_id(init_proj, init_proj_fn)
