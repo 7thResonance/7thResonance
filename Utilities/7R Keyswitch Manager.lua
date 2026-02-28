@@ -1,14 +1,18 @@
 --[[
 @description 7R Keyswitch Manager
 @author 7thResonance
-@version 1.3
+@version 1.4
 @changelog
-     - imgui error
+     - Added live mode. works outside of MIDI editor. 
+       follows selected track item under playhead, and highlights active KS during playback
+     - Table view for loaded KSs
 @about Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager
    I have added a few extra features.
       - Search and load MIDInotename files right inside the script.
       - Option to Extend already existing (live played or inserted KS notes).
       - Autosave window positions and size on close.
+      - Live mode (can use it outside of MIDI editor, 
+        follows selected track item under playhead, and highlights active KS during playback).
 @screenshot Window https://i.postimg.cc/xjBRHWP8/Screenshot-2025-08-20-044639.png
     Settings https://i.postimg.cc/wMR1g4tb/Screenshot-2025-08-20-044443.png
     Loaded KSs https://i.postimg.cc/XXMpJKdN/Screenshot-2025-08-20-044433.png
@@ -26,11 +30,14 @@ PreviousMidiEditor = nil
 ActiveTake = nil
 ActiveItem = nil
 ActiveTrack = nil
+PreviousTake = nil
+PreviousTrack = nil
 MIDIHash = nil
 PreviousMIDIHash = nil
 Articulations = {}
 CC = {}
 ActivatedKS = {}
+LastClickedKS = nil
 
 function ThemeColorToImguiColor(themeColorName)
     local color = reaper.GetThemeColor(themeColorName, 0)
@@ -62,6 +69,7 @@ ActiveTrackColor = 0xFFFFFFFF
 
 Setting_AutoupdateTextEvent = true
 Setting_ItemsPerColumn = 10
+Setting_FontSize = 14
 Setting_PPQOffset = -1
 Setting_SendNoteWhenClicked = false
 Setting_ChaseMode = false
@@ -78,6 +86,7 @@ PPQ = reaper.SNM_GetIntConfigVar("miditicksperbeat", 960)
 function SaveSettings()
     reaper.SetExtState("ReaKS", "Setting_AutoupdateTextEvent", tostring(Setting_AutoupdateTextEvent), true)
     reaper.SetExtState("ReaKS", "Setting_ItemsPerColumn", tostring(Setting_ItemsPerColumn), true)
+    reaper.SetExtState("ReaKS", "Setting_FontSize", tostring(Setting_FontSize), true)
     reaper.SetExtState("ReaKS", "Setting_PPQOffset", tostring(Setting_PPQOffset), true)
     reaper.SetExtState("ReaKS", "Setting_SendNoteWhenClicked", tostring(Setting_SendNoteWhenClicked), true)
     reaper.SetExtState("ReaKS", "Setting_ChaseMode", tostring(Setting_ChaseMode), true)
@@ -97,6 +106,9 @@ function LoadSettings()
 
     val = reaper.GetExtState("ReaKS", "Setting_ItemsPerColumn")
     if val ~= "" then Setting_ItemsPerColumn = tonumber(val) end
+
+    val = reaper.GetExtState("ReaKS", "Setting_FontSize")
+    if val ~= "" then Setting_FontSize = tonumber(val) end
 
     val = reaper.GetExtState("ReaKS", "Setting_PPQOffset")
     if val ~= "" then Setting_PPQOffset = tonumber(val) end
@@ -127,25 +139,41 @@ end
 function UpdateActiveTargets()
     ActiveMidiEditor = reaper.MIDIEditor_GetActive() or nil
     ActiveTake = reaper.MIDIEditor_GetTake(ActiveMidiEditor) or nil
-    if ActiveTake ~= nil then ActiveTrack = reaper.GetMediaItemTake_Track(ActiveTake) end
-    if ActiveTake ~= nil then ActiveItem = reaper.GetMediaItemTake_Item(ActiveTake) end
+    ActiveItem = nil
 
-    if ActiveTake ~= nil and ActiveTake ~= PreviousTake then
+    if ActiveTake ~= nil then
+        ActiveTrack = reaper.GetMediaItemTake_Track(ActiveTake)
+        ActiveItem = reaper.GetMediaItemTake_Item(ActiveTake)
+    else
+        ActiveTrack = reaper.GetSelectedTrack(0, 0)
+    end
+
+    if ActiveTake ~= PreviousTake or ActiveTrack ~= PreviousTrack then
         Articulations = {}
         CC = {}
+        LastClickedKS = nil
         RefreshGUI()
 
-        ActiveTakeName = reaper.GetTakeName(ActiveTake)
-        _, ActiveTrackName = reaper.GetTrackName(ActiveTrack)
+        if ActiveTake ~= nil then
+            ActiveTakeName = reaper.GetTakeName(ActiveTake)
+        else
+            ActiveTakeName = nil
+        end
 
-        ActiveTrackColor = reaper.GetTrackColor(ActiveTrack)
-        if ActiveTrackColor == 0 then ActiveTrackColor = 0xFFFFFFFF end
-
-        local r, g, b = reaper.ColorFromNative(ActiveTrackColor)
-        ActiveTrackColor = ImGui.ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+        if ActiveTrack ~= nil then
+            _, ActiveTrackName = reaper.GetTrackName(ActiveTrack)
+            ActiveTrackColor = reaper.GetTrackColor(ActiveTrack)
+            if ActiveTrackColor == 0 then ActiveTrackColor = 0xFFFFFFFF end
+            local r, g, b = reaper.ColorFromNative(ActiveTrackColor)
+            ActiveTrackColor = ImGui.ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+        else
+            ActiveTrackName = nil
+            ActiveTrackColor = 0xFFFFFFFF
+        end
     end
 
     PreviousTake = ActiveTake
+    PreviousTrack = ActiveTrack
 end
 
 function UpdateTextEvents()
@@ -202,7 +230,7 @@ function InjectNoteNames(noteNames, firstNoteID)
 end
 
 function ParseNoteNamesFromTake()
-    if ActiveTake == nil then return end
+    if ActiveTrack == nil then return end
 
     Articulations = {}
     for i = 0, 127 do
@@ -214,7 +242,7 @@ function ParseNoteNamesFromTake()
 end
 
 function ParseCCNamesFromTake()
-    if ActiveTake == nil then return end
+    if ActiveTrack == nil then return end
 
     CC = {}
     for i = 128, 255 do
@@ -359,11 +387,19 @@ function SendMIDINote(noteNumber)
     reaper.StuffMIDIMessage(0, 0x80, noteNumber, 0)
 end
 
+function MIDIKeyToName(noteNumber)
+    local names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
+    local pitchClass = (noteNumber % 12) + 1
+    local octave = math.floor(noteNumber / 12) - 1
+    return names[pitchClass] .. tostring(octave)
+end
+
 function RemoveKS(noteNumber)
     if ActiveTake == nil then return end
 
     if ActivatedKS[noteNumber] ~= nil then
         reaper.MIDI_DeleteNote(ActiveTake, ActivatedKS[noteNumber])
+        if LastClickedKS == noteNumber then LastClickedKS = nil end
     end    
 end
 
@@ -398,24 +434,60 @@ function LengthenSelectedNotes(toLeft)
     reaper.Undo_EndBlock("Lengthen Selected Notes", -1)
 end
 
+function GetMIDIItemTakeAtProjectTime(track, projectTime)
+    if track == nil then return nil end
+
+    local itemCount = reaper.CountTrackMediaItems(track)
+    for itemID = 0, itemCount - 1 do
+        local item = reaper.GetTrackMediaItem(track, itemID)
+        local itemStart = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local itemEnd = itemStart + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+
+        if projectTime >= itemStart and projectTime <= itemEnd then
+            local takeCount = reaper.CountTakes(item)
+            for takeID = 0, takeCount - 1 do
+                local take = reaper.GetTake(item, takeID)
+                if take ~= nil and reaper.TakeIsMIDI(take) then
+                    return take
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 function GetActiveKSAtPlayheadPosition()
-    if ActiveTake == nil then return end
-
     ActivatedKS = {}
-    local playheadPosition
+    local playState = reaper.GetPlayState()
+    local isPlaying = (playState & 1) == 1
+    local playheadProjectPos = isPlaying and reaper.GetPlayPosition() or reaper.GetCursorPosition()
+    local takeToScan = ActiveTake
 
-    playheadPosition = reaper.GetPlayState() == 1 and reaper.GetPlayPosition() or reaper.GetCursorPosition()
-    playheadPosition = reaper.MIDI_GetPPQPosFromProjTime(ActiveTake, playheadPosition)
+    -- Live mode: follow the selected track item under the playhead.
+    if takeToScan == nil then
+        takeToScan = GetMIDIItemTakeAtProjectTime(ActiveTrack, playheadProjectPos)
+    end
+    if takeToScan == nil then return end
+
+    local playheadPosition = reaper.MIDI_GetPPQPosFromProjTime(takeToScan, playheadProjectPos)
     
-    local _, noteCount = reaper.MIDI_CountEvts(ActiveTake)
+    local _, noteCount = reaper.MIDI_CountEvts(takeToScan)
     
+    local activePitch = nil
     for noteID = 1, noteCount do
-        local _, _, _, startppqpos, endppqpos, _, pitch, _ = reaper.MIDI_GetNote(ActiveTake, noteID - 1)
+        local _, _, _, startppqpos, endppqpos, _, pitch, _ = reaper.MIDI_GetNote(takeToScan, noteID - 1)
         if startppqpos <= playheadPosition and endppqpos >= playheadPosition then                
             if Articulations[pitch] ~= nil then
                     ActivatedKS[pitch] = noteID - 1
+                    activePitch = pitch
             end
         end
+    end
+
+    -- While transport is playing, remember the playhead-driven KS so it stays highlighted when playback stops.
+    if isPlaying and activePitch ~= nil then
+        LastClickedKS = activePitch
     end
 end
 
@@ -458,6 +530,16 @@ end
 local ctx = ImGui.CreateContext('7R Keyswitch Manager')
 ImGui.Attach(ctx, Font)
 ImGui.Attach(ctx, FontTitle)
+
+function RebuildFonts()
+    local baseSize = math.max(10, math.floor((tonumber(Setting_FontSize) or 14) + 0.5))
+    local titleSize = math.max(baseSize + 10, 16)
+
+    Font = ImGui.CreateFont('sans-serif', baseSize)
+    FontTitle = ImGui.CreateFont('sans-serif', titleSize, ImGui.FontFlags_Italic)
+    ImGui.Attach(ctx, Font)
+    ImGui.Attach(ctx, FontTitle)
+end
 
 -- Extend current KS to item end or until next KS
 function ExtendAllKS()
@@ -918,12 +1000,13 @@ local function loop()
             end
             if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "When enabled, clicking Refresh will extend existing KS notes to the next KS or item end.") end
 
-            _, val = ImGui.SliderInt(ctx, "KS per Column", Setting_ItemsPerColumn, 1, 100)
-            if val ~= Setting_ItemsPerColumn then
-                Setting_ItemsPerColumn = val
+            _, val = ImGui.SliderInt(ctx, "Font Size", Setting_FontSize, 10, 28)
+            if val ~= Setting_FontSize then
+                Setting_FontSize = val
+                RebuildFonts()
                 SaveSettings()
             end
-            if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "How many KS buttons in a single column.") end
+            if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "Changes the overall script UI font size.") end
 
             _, val = ImGui.SliderInt(ctx, "New Note Offset", Setting_PPQOffset, -math.abs(PPQ/4), 0)  
             if val ~= Setting_PPQOffset then
@@ -1045,47 +1128,69 @@ local function loop()
             NoteBrowser_WasOpen = false
         end
 
- if ActiveTake == nil then
-            ImGui.Separator(ctx)
-            ImGui.Text(ctx, "No active MIDI take is open in the MIDI editor.")
+        ImGui.SeparatorText(ctx, "Keyswitches")
+        if ActiveTake == nil then
+            ImGui.Text(ctx, "Live mode: no active MIDI take, clicks will send MIDI only.")
+        end
+        if ActiveTrack == nil then
+            ImGui.Text(ctx, "Select a track or open a MIDI editor.")
         else
-            ImGui.SeparatorText(ctx, "Keyswitches")
-            local itemCount = 0
-            ImGui.BeginGroup(ctx)
+            local playState = reaper.GetPlayState()
+            local isPlaying = (playState & 1) == 1
+            if ImGui.BeginTable ~= nil then
+                if ImGui.BeginTable(ctx, "KeyswitchTable", 2) then
+                    ImGui.TableSetupColumn(ctx, "Key", ImGui.TableColumnFlags_WidthFixed, 42)
+                    ImGui.TableSetupColumn(ctx, "Articulation", ImGui.TableColumnFlags_WidthStretch)
+                    ImGui.TableHeadersRow(ctx)
 
-            for i = 0, 127 do
-                if Articulations[i] ~= nil then
-                    local articulation = Articulations[i]
+                    for i = 0, 127 do
+                        if Articulations[i] ~= nil then
+                            local articulation = tostring(Articulations[i])
+                            local keyName = MIDIKeyToName(i)
+                            local isHighlighted = (ActivatedKS[i] ~= nil) or ((not isPlaying) and (LastClickedKS == i))
 
-                    if ActivatedKS[i] ~= nil then ImGui.PushStyleColor(ctx, ImGui.Col_Button, EnumThemeColors.G) end
+                            ImGui.TableNextRow(ctx)
+                            ImGui.TableSetColumnIndex(ctx, 0)
+                            ImGui.Text(ctx, keyName)
 
-                    local buttonLabel = tostring(articulation) .. "##ks_" .. tostring(i)
-                    if ImGui.Button(ctx, buttonLabel, 100) then
-                        local isShiftHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Shift
-                        local isCtrlHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Ctrl
-                        local isAltHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Alt
-                        
-                        if isCtrlHeld then 
-                            SendMIDINote(i)
-                        elseif isAltHeld then
-                            RemoveKS(i)
-                        else
-                            InsertKS(i, isShiftHeld)                            
-                            if Setting_SendNoteWhenClicked then SendMIDINote(i) end                                
+                            ImGui.TableSetColumnIndex(ctx, 1)
+                            if isHighlighted then
+                                ImGui.PushStyleColor(ctx, ImGui.Col_Button, EnumThemeColors.G)
+                                ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, EnumThemeColors.G)
+                                ImGui.PushStyleColor(ctx, ImGui.Col_ButtonActive, EnumThemeColors.G)
+                            end
+
+                            local buttonLabel = articulation .. "##ks_" .. tostring(i)
+                            if ImGui.Button(ctx, buttonLabel, -1) then
+                                LastClickedKS = i
+                                local isShiftHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Shift
+                                local isCtrlHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Ctrl
+                                local isAltHeld = ImGui.GetKeyMods(ctx) == ImGui.Mod_Alt
+
+                                if isCtrlHeld then
+                                    SendMIDINote(i)
+                                elseif isAltHeld then
+                                    RemoveKS(i)
+                                else
+                                    if ActiveTake ~= nil then
+                                        InsertKS(i, isShiftHeld)
+                                        if Setting_SendNoteWhenClicked then SendMIDINote(i) end
+                                    else
+                                        SendMIDINote(i)
+                                    end
+                                end
+                            end
+                            if ImGui.IsItemHovered(ctx) then
+                                ImGui.SetTooltip(ctx, articulation .. " (" .. keyName .. ")")
+                            end
+
+                            if isHighlighted then ImGui.PopStyleColor(ctx, 3) end
                         end
                     end
 
-                    if ActivatedKS[i] ~= nil then ImGui.PopStyleColor(ctx) end
-
-                    itemCount = itemCount + 1
-                    if itemCount % Setting_ItemsPerColumn == 0 then
-                        ImGui.EndGroup(ctx)
-                        ImGui.SameLine(ctx)
-                        ImGui.BeginGroup(ctx) 
-                    end
+                    ImGui.EndTable(ctx)
                 end
             end
-            ImGui.EndGroup(ctx)
         end
 
         -- Save window pos/size before ending
@@ -1107,5 +1212,6 @@ local function loop()
 end
 
 LoadSettings()
+RebuildFonts()
 reaper.set_action_options(1)
 reaper.defer(loop)
