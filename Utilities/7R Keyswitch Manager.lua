@@ -1,11 +1,10 @@
 --[[
 @description 7R Keyswitch Manager
 @author 7thResonance
-@version 1.4
+@version 1.5
 @changelog
-     - Added live mode. works outside of MIDI editor. 
-       follows selected track item under playhead, and highlights active KS during playback
-     - Table view for loaded KSs
+     - Added display octave slider. default -1.
+     - Some GUI performance optimizations.
 @about Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager
    I have added a few extra features.
       - Search and load MIDInotename files right inside the script.
@@ -38,6 +37,16 @@ Articulations = {}
 CC = {}
 ActivatedKS = {}
 LastClickedKS = nil
+KSScanInterval = 1 / 20
+LastKSScanTime = 0
+LastKSScanTake = nil
+LastKSScanTrack = nil
+LastKSScanPlayState = nil
+LastKSScanPPQ = nil
+LiveModeCachedTrack = nil
+LiveModeCachedTake = nil
+LiveModeCachedItemStart = nil
+LiveModeCachedItemEnd = nil
 
 function ThemeColorToImguiColor(themeColorName)
     local color = reaper.GetThemeColor(themeColorName, 0)
@@ -71,6 +80,7 @@ Setting_AutoupdateTextEvent = true
 Setting_ItemsPerColumn = 10
 Setting_FontSize = 14
 Setting_PPQOffset = -1
+Setting_DisplayOctaveTranspose = -1
 Setting_SendNoteWhenClicked = false
 Setting_ChaseMode = false
 Setting_ExtendOnRefresh = true
@@ -88,6 +98,7 @@ function SaveSettings()
     reaper.SetExtState("ReaKS", "Setting_ItemsPerColumn", tostring(Setting_ItemsPerColumn), true)
     reaper.SetExtState("ReaKS", "Setting_FontSize", tostring(Setting_FontSize), true)
     reaper.SetExtState("ReaKS", "Setting_PPQOffset", tostring(Setting_PPQOffset), true)
+    reaper.SetExtState("ReaKS", "Setting_DisplayOctaveTranspose", tostring(Setting_DisplayOctaveTranspose), true)
     reaper.SetExtState("ReaKS", "Setting_SendNoteWhenClicked", tostring(Setting_SendNoteWhenClicked), true)
     reaper.SetExtState("ReaKS", "Setting_ChaseMode", tostring(Setting_ChaseMode), true)
     reaper.SetExtState("ReaKS", "Setting_ExtendOnRefresh", tostring(Setting_ExtendOnRefresh), true)
@@ -112,6 +123,9 @@ function LoadSettings()
 
     val = reaper.GetExtState("ReaKS", "Setting_PPQOffset")
     if val ~= "" then Setting_PPQOffset = tonumber(val) end
+
+    val = reaper.GetExtState("ReaKS", "Setting_DisplayOctaveTranspose")
+    if val ~= "" then Setting_DisplayOctaveTranspose = math.floor(tonumber(val) or -1) end
 
     val = reaper.GetExtState("ReaKS", "Setting_SendNoteWhenClicked")
     if val ~= "" then Setting_SendNoteWhenClicked = val == "true" end
@@ -152,7 +166,16 @@ function UpdateActiveTargets()
         Articulations = {}
         CC = {}
         LastClickedKS = nil
-        RefreshGUI()
+        RefreshGUI(false)
+        LastKSScanTime = 0
+        LastKSScanTake = nil
+        LastKSScanTrack = nil
+        LastKSScanPlayState = nil
+        LastKSScanPPQ = nil
+        LiveModeCachedTrack = nil
+        LiveModeCachedTake = nil
+        LiveModeCachedItemStart = nil
+        LiveModeCachedItemEnd = nil
 
         if ActiveTake ~= nil then
             ActiveTakeName = reaper.GetTakeName(ActiveTake)
@@ -202,7 +225,7 @@ function LoadNoteNames()
     Articulations = {}
     CC = {}
     reaper.MIDIEditor_LastFocused_OnCommand(40409, false)    
-    RefreshGUI()
+    RefreshGUI(false)
 end
 
 function SaveNoteNames()
@@ -226,7 +249,7 @@ function InjectNoteNames(noteNames, firstNoteID)
         reaper.SetTrackMIDINoteNameEx(0, ActiveTrack, firstNoteID + i - 1, 0, noteName)
     end
 
-    RefreshGUI()
+    RefreshGUI(true)
 end
 
 function ParseNoteNamesFromTake()
@@ -259,7 +282,7 @@ end
 
 function RenameAliasCCLane()
     reaper.MIDIEditor_LastFocused_OnCommand(40416, false)
-    RefreshGUI()
+    RefreshGUI(false)
 end
 
 function InsertKS(noteNumber, isShiftHeld)
@@ -389,8 +412,9 @@ end
 
 function MIDIKeyToName(noteNumber)
     local names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
-    local pitchClass = (noteNumber % 12) + 1
-    local octave = math.floor(noteNumber / 12) - 1
+    local displayNoteNumber = noteNumber + ((Setting_DisplayOctaveTranspose or -1) * 12)
+    local pitchClass = (displayNoteNumber % 12) + 1
+    local octave = math.floor(displayNoteNumber / 12) - 1
     return names[pitchClass] .. tostring(octave)
 end
 
@@ -434,8 +458,36 @@ function LengthenSelectedNotes(toLeft)
     reaper.Undo_EndBlock("Lengthen Selected Notes", -1)
 end
 
+local function IsValidTake(take)
+    if take == nil then return false end
+    if reaper.ValidatePtr2 then
+        return reaper.ValidatePtr2(0, take, "MediaItem_Take*")
+    end
+    return true
+end
+
+local function IsValidTrack(track)
+    if track == nil then return false end
+    if reaper.ValidatePtr2 then
+        return reaper.ValidatePtr2(0, track, "MediaTrack*")
+    end
+    return true
+end
+
 function GetMIDIItemTakeAtProjectTime(track, projectTime)
-    if track == nil then return nil end
+    if not IsValidTrack(track) then
+        LiveModeCachedTrack = nil
+        LiveModeCachedTake = nil
+        LiveModeCachedItemStart = nil
+        LiveModeCachedItemEnd = nil
+        return nil
+    end
+
+    if LiveModeCachedTrack == track and IsValidTake(LiveModeCachedTake) and LiveModeCachedItemStart ~= nil and LiveModeCachedItemEnd ~= nil then
+        if projectTime >= LiveModeCachedItemStart and projectTime <= LiveModeCachedItemEnd then
+            return LiveModeCachedTake
+        end
+    end
 
     local itemCount = reaper.CountTrackMediaItems(track)
     for itemID = 0, itemCount - 1 do
@@ -448,17 +500,28 @@ function GetMIDIItemTakeAtProjectTime(track, projectTime)
             for takeID = 0, takeCount - 1 do
                 local take = reaper.GetTake(item, takeID)
                 if take ~= nil and reaper.TakeIsMIDI(take) then
+                    LiveModeCachedTrack = track
+                    LiveModeCachedTake = take
+                    LiveModeCachedItemStart = itemStart
+                    LiveModeCachedItemEnd = itemEnd
                     return take
                 end
             end
         end
     end
 
+    LiveModeCachedTrack = track
+    LiveModeCachedTake = nil
+    LiveModeCachedItemStart = nil
+    LiveModeCachedItemEnd = nil
     return nil
 end
 
 function GetActiveKSAtPlayheadPosition()
-    ActivatedKS = {}
+    local now = reaper.time_precise()
+    if now - LastKSScanTime < KSScanInterval then return end
+    LastKSScanTime = now
+
     local playState = reaper.GetPlayState()
     local isPlaying = (playState & 1) == 1
     local playheadProjectPos = isPlaying and reaper.GetPlayPosition() or reaper.GetCursorPosition()
@@ -468,9 +531,27 @@ function GetActiveKSAtPlayheadPosition()
     if takeToScan == nil then
         takeToScan = GetMIDIItemTakeAtProjectTime(ActiveTrack, playheadProjectPos)
     end
-    if takeToScan == nil then return end
+
+    if not IsValidTake(takeToScan) then
+        takeToScan = nil
+    end
+
+    if takeToScan == nil then
+        ActivatedKS = {}
+        LastKSScanTake = nil
+        LastKSScanTrack = ActiveTrack
+        LastKSScanPlayState = playState
+        LastKSScanPPQ = nil
+        return
+    end
 
     local playheadPosition = reaper.MIDI_GetPPQPosFromProjTime(takeToScan, playheadProjectPos)
+    local playheadPPQRounded = math.floor(playheadPosition + 0.5)
+    if LastKSScanTake == takeToScan and LastKSScanTrack == ActiveTrack and LastKSScanPlayState == playState and LastKSScanPPQ == playheadPPQRounded then
+        return
+    end
+
+    ActivatedKS = {}
     
     local _, noteCount = reaper.MIDI_CountEvts(takeToScan)
     
@@ -489,12 +570,21 @@ function GetActiveKSAtPlayheadPosition()
     if isPlaying and activePitch ~= nil then
         LastClickedKS = activePitch
     end
+
+    LastKSScanTake = takeToScan
+    LastKSScanTrack = ActiveTrack
+    LastKSScanPlayState = playState
+    LastKSScanPPQ = playheadPPQRounded
 end
 
-function RefreshGUI()
-    UpdateTextEvents()
+function RefreshGUI(shouldUpdateTextEvents)
+    if shouldUpdateTextEvents and Setting_AutoupdateTextEvent then
+        UpdateTextEvents()
+    end
     ParseNoteNamesFromTake()
     ParseCCNamesFromTake()
+    LastKSScanTake = nil
+    LastKSScanPPQ = nil
 end
 
 function StylingStart(ctx)
@@ -640,6 +730,10 @@ NoteTree = NoteTree or {}
 FilteredNoteTree = FilteredNoteTree or {}
 ExpandedFolders = ExpandedFolders or {}
 SelectedNoteFile = SelectedNoteFile or nil
+NoteBrowser_AllFilesCache = NoteBrowser_AllFilesCache or {}
+NoteBrowser_FilteredFilesCache = NoteBrowser_FilteredFilesCache or {}
+NoteBrowser_AllCount = NoteBrowser_AllCount or 0
+NoteBrowser_FilteredCount = NoteBrowser_FilteredCount or 0
 
 -- Build a flat list of all .txt files under the root
 function BuildNoteNameFileList(root)
@@ -806,6 +900,13 @@ function FlattenNoteFiles(tree_items, out)
     return out
 end
 
+function RefreshNoteBrowserFileCaches()
+    NoteBrowser_AllFilesCache = FlattenNoteFiles(NoteTree, {})
+    NoteBrowser_FilteredFilesCache = FlattenNoteFiles(FilteredNoteTree, {})
+    NoteBrowser_AllCount = #NoteBrowser_AllFilesCache
+    NoteBrowser_FilteredCount = #NoteBrowser_FilteredFilesCache
+end
+
 function FilterNoteTree(tree_items, search_term)
     if not search_term or search_term == '' then return tree_items end
     local q = search_term:lower()
@@ -834,9 +935,7 @@ end
 
 local function DrawNoteTreeNode(item)
     if item.type == 'folder' then
-        -- Use random ID like the Track Template Inserter so ImGui doesn't keep open state; rely on our expanded flag
-        local unique_id = 'folder_' .. tostring(math.random(1000000))
-        ImGui.PushID(ctx, unique_id)
+        ImGui.PushID(ctx, item.relative_path)
 
         if item.expanded then ImGui.SetNextItemOpen(ctx, true) end
     local opened = ImGui.TreeNode(ctx, item.name)
@@ -930,7 +1029,7 @@ function LoadNoteNamesFromFile(filePath)
     end
     f:close()
 
-    RefreshGUI()
+    RefreshGUI(true)
 end
 
 -- Defaults for window pos/size
@@ -961,7 +1060,7 @@ local function loop()
         if ImGui.Button(ctx, "Clear") then ClearNoteNames() end
         ImGui.SameLine(ctx)
         if ImGui.Button(ctx, "Refresh") then 
-            RefreshGUI()
+            RefreshGUI(true)
             if Setting_ExtendOnRefresh then
                 ExtendAllKS()
             end
@@ -1015,6 +1114,13 @@ local function loop()
             end
             if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "Negative offset for inserted KS note. Helps with triggering KS just before the note. Default is -1.") end
 
+            _, val = ImGui.SliderInt(ctx, "Display Octave Transpose", Setting_DisplayOctaveTranspose, -4, 4)
+            if val ~= Setting_DisplayOctaveTranspose then
+                Setting_DisplayOctaveTranspose = val
+                SaveSettings()
+            end
+            if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "Changes only key name display (e.g. C4 labels). Does not transpose inserted/sent MIDI notes. Default is -1.") end
+
             ImGui.EndPopup(ctx)
         end
 
@@ -1045,8 +1151,8 @@ local function loop()
             if (not NoteBrowser_WasOpen) or (NoteBrowser_LastRoot ~= root) or (#NoteTree == 0) then
                 NoteTree = BuildNoteTree(root)
                 FilteredNoteTree = NoteTree
-                local flat = FlattenNoteFiles(FilteredNoteTree)
-                SelectedNoteFile = flat[1]
+                RefreshNoteBrowserFileCaches()
+                SelectedNoteFile = NoteBrowser_FilteredFilesCache[1]
                 NoteBrowser_LastRoot = root
             end
 
@@ -1072,8 +1178,9 @@ local function loop()
                 else
                     FilteredNoteTree = FilterNoteTree(NoteTree, NoteBrowser_Search)
                 end
-                local results = FlattenNoteFiles(FilteredNoteTree)
-                if #results > 0 then
+                RefreshNoteBrowserFileCaches()
+                local results = NoteBrowser_FilteredFilesCache
+                if NoteBrowser_FilteredCount > 0 then
                     local keep = false
                     if SelectedNoteFile then
                         for _, it in ipairs(results) do
@@ -1088,8 +1195,8 @@ local function loop()
 
             -- Keyboard navigation when search is focused
             if ImGui.IsItemFocused(ctx) then
-                local results = FlattenNoteFiles(FilteredNoteTree)
-                if #results > 0 then
+                local results = NoteBrowser_FilteredFilesCache
+                if NoteBrowser_FilteredCount > 0 then
                     local idx = 1
                     if SelectedNoteFile then
                         for i, it in ipairs(results) do
@@ -1113,14 +1220,11 @@ local function loop()
             end
 
             -- Show tree
-            local isFiltering = (NoteBrowser_Search or '') ~= ''
-            DrawNoteTree(isFiltering)
+            DrawNoteTree()
 
             -- Show counts
-            local allCount = #FlattenNoteFiles(NoteTree)
-            local filtCount = #FlattenNoteFiles(FilteredNoteTree)
             ImGui.Separator(ctx)
-            ImGui.Text(ctx, string.format("%d/%d files", filtCount, allCount))
+            ImGui.Text(ctx, string.format("%d/%d files", NoteBrowser_FilteredCount, NoteBrowser_AllCount))
 
             ImGui.EndChild(ctx)
         else
@@ -1147,7 +1251,7 @@ local function loop()
                         if Articulations[i] ~= nil then
                             local articulation = tostring(Articulations[i])
                             local keyName = MIDIKeyToName(i)
-                            local isHighlighted = (ActivatedKS[i] ~= nil) or ((not isPlaying) and (LastClickedKS == i))
+                            local isHighlighted = (isPlaying and (ActivatedKS[i] ~= nil)) or ((not isPlaying) and (LastClickedKS == i))
 
                             ImGui.TableNextRow(ctx)
                             ImGui.TableSetColumnIndex(ctx, 0)
