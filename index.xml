@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="8059d8556a59e7e1b9df3ab0382530bbd2b0d622">
+<index version="1" name="7thResonance" commit="7899d6457efdb0dbe7b2575368c584a338e85f61">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -423,6 +423,11 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
   follows selected track item under playhead, and highlights active KS during playback
 - Table view for loaded KSs]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/8059d8556a59e7e1b9df3ab0382530bbd2b0d622/Utilities/7R%20Keyswitch%20Manager.lua</source>
+      </version>
+      <version name="1.5" author="7thResonance" time="2026-02-28T18:47:20Z">
+        <changelog><![CDATA[- Added display octave slider. default -1.
+- Some GUI performance optimizations.]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/7899d6457efdb0dbe7b2575368c584a338e85f61/Utilities/7R%20Keyswitch%20Manager.lua</source>
       </version>
     </reapack>
     <reapack name="7R Marker n Region Exporter (GUI)(Project, Take, Item relative, Source Relative).lua" type="script" desc="7R Marker n Region Exporter (Project/Take/Regions)">
