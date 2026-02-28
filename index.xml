@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="f6312afe421e24ccaff527ef2c8ff11c47dd72b7">
+<index version="1" name="7thResonance" commit="8059d8556a59e7e1b9df3ab0382530bbd2b0d622">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -393,7 +393,8 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager I have added a few extra features.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Search and load MIDInotename files right inside the script.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Option to Extend already existing (live played or inserted KS notes).\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Autosave window positions and size on close.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Autosave window positions and size on close.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Live mode (can use it outside of MIDI editor, follows selected track item under playhead, and highlights active KS during playback).\sa180\par}
 }
 ]]></description>
         <link rel="screenshot" href="https://i.postimg.cc/xjBRHWP8/Screenshot-2025-08-20-044639.png">Window</link>
@@ -416,6 +417,12 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.3" author="7thResonance" time="2026-02-23T19:19:59Z">
         <changelog><![CDATA[- imgui error]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/2807a1dadbe920a239a5646e383308addee720d5/Utilities/7R%20Keyswitch%20Manager.lua</source>
+      </version>
+      <version name="1.4" author="7thResonance" time="2026-02-28T10:06:56Z">
+        <changelog><![CDATA[- Added live mode. works outside of MIDI editor. 
+  follows selected track item under playhead, and highlights active KS during playback
+- Table view for loaded KSs]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/8059d8556a59e7e1b9df3ab0382530bbd2b0d622/Utilities/7R%20Keyswitch%20Manager.lua</source>
       </version>
     </reapack>
     <reapack name="7R Marker n Region Exporter (GUI)(Project, Take, Item relative, Source Relative).lua" type="script" desc="7R Marker n Region Exporter (Project/Take/Regions)">
