@@ -1,12 +1,34 @@
 --[[
 @description 7R Freeze Instruments to Stereo (Other FX Online)
 @author 7thResonance
-@version 1.3
-@changelog -Removed the channel count edit. Uses native freeze function anyway
+@version 1.4
+@changelog  - Multi instrument detection
+            - FX before the first FX are now kept online, only FX after the instrument are frozen offline.
 @about Freezes Selected tracks. up to Instrument, Other FX are brough online after freezing.
 
     Lua Script for Reaper: Offline non-instrument FX, Freeze Selected Tracks to Stereo, Unlock All Items Directly, Online Remaining FX
 --]]
+-- Main function
+local function is_instrument_fx(track, fx_idx)
+    if reaper.TrackFX_GetInstrument(track) == fx_idx then
+        return true
+    end
+
+    -- Prefer config type when available (e.g. VSTi/CLAPi/AUi/DXi).
+    local ok, fx_type = reaper.TrackFX_GetNamedConfigParm(track, fx_idx, "fx_type")
+    if ok and type(fx_type) == "string" and fx_type:match("i$") then
+        return true
+    end
+
+    -- Fallback for older REAPER versions where fx_type may be unavailable.
+    local _, fx_name = reaper.TrackFX_GetFXName(track, fx_idx, "")
+    if fx_name:match("^VSTi:") or fx_name:match("^CLAPi:") or fx_name:match("^AUi:") or fx_name:match("^DXi:") then
+        return true
+    end
+
+    return false
+end
+
 -- Main function
 local function main()
     -- Step 0: Unselect folder tracks at the very start
@@ -59,16 +81,19 @@ local function main()
         return
     end
 
-    -- Step 1: Offline non-instrument FX for all selected tracks
+    -- Step 1: Offline post-instrument FX for all selected tracks
     for i, track in ipairs(selected_tracks) do
         local fx_count = reaper.TrackFX_GetCount(track)
         if fx_count < 0 then
             goto continue_offline
         end
         local instrument_idx = reaper.TrackFX_GetInstrument(track)
-        for fx_idx = 0, fx_count - 1 do
-            if fx_idx ~= instrument_idx then
-                reaper.TrackFX_SetOffline(track, fx_idx, true)
+        -- Keep FX before the instrument online; only offline FX after it.
+        if instrument_idx >= 0 then
+            for fx_idx = instrument_idx + 1, fx_count - 1 do
+                if not is_instrument_fx(track, fx_idx) then
+                    reaper.TrackFX_SetOffline(track, fx_idx, true)
+                end
             end
         end
         ::continue_offline::
