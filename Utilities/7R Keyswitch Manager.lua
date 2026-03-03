@@ -1,10 +1,9 @@
 --[[
 @description 7R Keyswitch Manager
 @author 7thResonance
-@version 1.5
+@version 1.6
 @changelog
-     - Added display octave slider. default -1.
-     - Some GUI performance optimizations.
+     - Focus Arrange Window after KS injection if the setting is enabled.
 @about Original Script by Ugurcan Orcun; ReaKS - Keyswitch Articulation Manager
    I have added a few extra features.
       - Search and load MIDInotename files right inside the script.
@@ -84,6 +83,8 @@ Setting_DisplayOctaveTranspose = -1
 Setting_SendNoteWhenClicked = false
 Setting_ChaseMode = false
 Setting_ExtendOnRefresh = true
+Setting_PassKeyboardToReaper = true
+Setting_ReturnFocusToArrange = true
 
 Modal_Settings = false
 Modal_NoteNameHelper = false
@@ -102,6 +103,8 @@ function SaveSettings()
     reaper.SetExtState("ReaKS", "Setting_SendNoteWhenClicked", tostring(Setting_SendNoteWhenClicked), true)
     reaper.SetExtState("ReaKS", "Setting_ChaseMode", tostring(Setting_ChaseMode), true)
     reaper.SetExtState("ReaKS", "Setting_ExtendOnRefresh", tostring(Setting_ExtendOnRefresh), true)
+    reaper.SetExtState("ReaKS", "Setting_PassKeyboardToReaper", tostring(Setting_PassKeyboardToReaper), true)
+    reaper.SetExtState("ReaKS", "Setting_ReturnFocusToArrange", tostring(Setting_ReturnFocusToArrange), true)
 
     -- Save window position & size
     reaper.SetExtState("ReaKS", "Window_PosX", tostring(Window_PosX), true)
@@ -135,6 +138,12 @@ function LoadSettings()
 
     val = reaper.GetExtState("ReaKS", "Setting_ExtendOnRefresh")
     if val ~= "" then Setting_ExtendOnRefresh = val == "true" end
+
+    val = reaper.GetExtState("ReaKS", "Setting_PassKeyboardToReaper")
+    if val ~= "" then Setting_PassKeyboardToReaper = val == "true" end
+
+    val = reaper.GetExtState("ReaKS", "Setting_ReturnFocusToArrange")
+    if val ~= "" then Setting_ReturnFocusToArrange = val == "true" end
 
     -- Load window position & size
     val = reaper.GetExtState("ReaKS", "Window_PosX")
@@ -471,6 +480,25 @@ local function IsValidTrack(track)
     if reaper.ValidatePtr2 then
         return reaper.ValidatePtr2(0, track, "MediaTrack*")
     end
+    return true
+end
+
+local function FocusArrangeWindow()
+    if not Setting_ReturnFocusToArrange then return false end
+    if not (reaper.JS_Window_SetFocus and reaper.JS_Window_FindChildByID and reaper.GetMainHwnd) then
+        return false
+    end
+
+    local mainHwnd = reaper.GetMainHwnd()
+    if not mainHwnd then return false end
+
+    local arrangeHwnd = reaper.JS_Window_FindChildByID(mainHwnd, 1000)
+    if arrangeHwnd then
+        reaper.JS_Window_SetFocus(arrangeHwnd)
+        return true
+    end
+
+    reaper.JS_Window_SetFocus(mainHwnd)
     return true
 end
 
@@ -1039,6 +1067,10 @@ Window_SizeW, Window_SizeH = Window_SizeW or 800, Window_SizeH or 600
 local function loop()
     StylingStart(ctx)
 
+    if Setting_PassKeyboardToReaper and ImGui.SetNextFrameWantCaptureKeyboard then
+        ImGui.SetNextFrameWantCaptureKeyboard(ctx, false)
+    end
+
     -- Restore window pos/size
     ImGui.SetNextWindowPos(ctx, Window_PosX, Window_PosY, ImGui.Cond_FirstUseEver)
     ImGui.SetNextWindowSize(ctx, Window_SizeW, Window_SizeH, ImGui.Cond_FirstUseEver)
@@ -1098,6 +1130,18 @@ local function loop()
                 SaveSettings()
             end
             if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "When enabled, clicking Refresh will extend existing KS notes to the next KS or item end.") end
+
+            if ImGui.Checkbox(ctx, "Pass Keyboard to REAPER", Setting_PassKeyboardToReaper) then
+                Setting_PassKeyboardToReaper = not Setting_PassKeyboardToReaper
+                SaveSettings()
+            end
+            if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "When enabled, this window won't capture global keyboard shortcuts, so REAPER actions work without extra clicks.") end
+
+            if ImGui.Checkbox(ctx, "Return focus to Arrange after KS click", Setting_ReturnFocusToArrange) then
+                Setting_ReturnFocusToArrange = not Setting_ReturnFocusToArrange
+                SaveSettings()
+            end
+            if ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, "Requires js_ReaScriptAPI. After clicking a keyswitch button, focus returns to the Arrange view so section shortcuts work immediately.") end
 
             _, val = ImGui.SliderInt(ctx, "Font Size", Setting_FontSize, 10, 28)
             if val ~= Setting_FontSize then
@@ -1283,6 +1327,7 @@ local function loop()
                                         SendMIDINote(i)
                                     end
                                 end
+                                FocusArrangeWindow()
                             end
                             if ImGui.IsItemHovered(ctx) then
                                 ImGui.SetTooltip(ctx, articulation .. " (" .. keyName .. ")")
