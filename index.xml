@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="544f9d8278ae36489af0e8c96d8dee8b97fc2850">
+<index version="1" name="7thResonance" commit="d381712c504f8fab142d23af7c7a0a7366011454">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -433,6 +433,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <changelog><![CDATA[- Added display octave slider. default -1.
 - Some GUI performance optimizations.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/7899d6457efdb0dbe7b2575368c584a338e85f61/Utilities/7R%20Keyswitch%20Manager.lua</source>
+      </version>
+      <version name="1.6" author="7thResonance" time="2026-03-03T03:29:32Z">
+        <changelog><![CDATA[- Focus Arrange Window after KS injection if the setting is enabled.]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/d381712c504f8fab142d23af7c7a0a7366011454/Utilities/7R%20Keyswitch%20Manager.lua</source>
       </version>
     </reapack>
     <reapack name="7R Marker n Region Exporter (GUI)(Project, Take, Item relative, Source Relative).lua" type="script" desc="7R Marker n Region Exporter (Project/Take/Regions)">
