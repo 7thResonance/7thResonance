@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.7
-@changelog - Single click inserts stuff
+@version 3.8
+@changelog - insertion to master track under certain conditions fixed.
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
@@ -1410,14 +1410,20 @@ local function insert_fx(fx_name)
         local apply_to_all = settings.apply_to_all_selected
         if apply_to_all then
             if insert_mode == "track" or insert_mode == "master" then
+                local master_track = reaper.GetMasterTrack(0)
+                local include_master = (insert_mode == "master" and target_track == master_track)
                 local num_sel = reaper.CountSelectedTracks(0)
-                if num_sel > 3 then
-                    local msg = "You have " .. num_sel .. " selected tracks. Are you sure you want to add FX to all of them?"
+                local total_targets = num_sel + (include_master and 1 or 0)
+                if total_targets > 3 then
+                    local msg = "You have " .. total_targets .. " selected track targets. Are you sure you want to add FX to all of them?"
                     local ret = reaper.ShowMessageBox(msg, "Warning", 4) -- 4 = Yes/No
                     if ret ~= 6 then return false end -- 6 = Yes
                 end
                 for i = 0, num_sel - 1 do
                     targets[#targets + 1] = {type = "track", obj = reaper.GetSelectedTrack(0, i)}
+                end
+                if include_master then
+                    targets[#targets + 1] = {type = "track", obj = master_track}
                 end
             elseif insert_mode == "item" then
                 local num_sel = reaper.CountSelectedMediaItems(0)

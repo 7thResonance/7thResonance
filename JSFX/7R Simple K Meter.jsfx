@@ -1,9 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.10
+version: 1.11
 about: A simple K meter JSFX
-changelog: - Added Peak/RMS, LUFS S, LUFS M modes
-           - Increased Scale Max range
+changelog: - centered some elements
 options:no_meter
 
 
@@ -266,6 +265,10 @@ meter_h = gfx_h - pad*2;
 meter_w = gfx_w - pad*2;
 meter_bottom = gfx_h - pad;
 bar_w = meter_w / 2;
+meter_left = pad;
+meter_mid = pad + bar_w;
+meter_right = pad + meter_w;
+meter_w_line = meter_w - 1;
 
 // ----- RMS bars -----
 thresh_yellow_n = (thresh_yellow - scale_min) / scale_span;
@@ -273,47 +276,55 @@ thresh_red_n = (thresh_red - scale_min) / scale_span;
 
 // Left bar
 non_k_mode ? (
-    full_h_l = rms_n_l * meter_h;
+    full_y_l = floor(meter_bottom - rms_n_l * meter_h + 0.5);
     gfx_set(0.20, 0.70, 1.00, 1);
-    gfx_rect(pad, meter_bottom - full_h_l, bar_w, full_h_l);
+    gfx_rect(meter_left, full_y_l, bar_w, meter_bottom - full_y_l);
 ) : (
-    green_h_l = min(rms_n_l, thresh_yellow_n) * meter_h;
-    yellow_h_l = min(max(rms_n_l - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
-    red_h_l = max(rms_n_l - thresh_red_n, 0) * meter_h;
+    green_y_l = floor(meter_bottom - min(rms_n_l, thresh_yellow_n) * meter_h + 0.5);
+    yellow_y_l = floor(meter_bottom - min(rms_n_l, thresh_red_n) * meter_h + 0.5);
+    red_y_l = floor(meter_bottom - rms_n_l * meter_h + 0.5);
 
     gfx_set(0.25, 0.85, 0.25, 1); // green
-    gfx_rect(pad, meter_bottom - green_h_l, bar_w, green_h_l);
+    gfx_rect(meter_left, green_y_l, bar_w, meter_bottom - green_y_l);
 
-    gfx_set(1, 1, 0.3, 1); // yellow
-    gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l, bar_w, yellow_h_l);
+    rms_n_l > thresh_yellow_n ? (
+        gfx_set(1, 1, 0.3, 1); // yellow
+        gfx_rect(meter_left, yellow_y_l, bar_w, green_y_l - yellow_y_l);
+    );
 
-    gfx_set(1, 0.3, 0.3, 1); // red
-    gfx_rect(pad, meter_bottom - green_h_l - yellow_h_l - red_h_l, bar_w, red_h_l);
+    rms_n_l > thresh_red_n ? (
+        gfx_set(1, 0.3, 0.3, 1); // red
+        gfx_rect(meter_left, red_y_l, bar_w, yellow_y_l - red_y_l);
+    );
 );
 
 // Right bar
 non_k_mode ? (
-    full_h_r = rms_n_r * meter_h;
+    full_y_r = floor(meter_bottom - rms_n_r * meter_h + 0.5);
     gfx_set(0.20, 0.70, 1.00, 1);
-    gfx_rect(pad + bar_w, meter_bottom - full_h_r, bar_w, full_h_r);
+    gfx_rect(meter_mid, full_y_r, bar_w, meter_bottom - full_y_r);
 ) : (
-    green_h_r = min(rms_n_r, thresh_yellow_n) * meter_h;
-    yellow_h_r = min(max(rms_n_r - thresh_yellow_n, 0), thresh_red_n - thresh_yellow_n) * meter_h;
-    red_h_r = max(rms_n_r - thresh_red_n, 0) * meter_h;
+    green_y_r = floor(meter_bottom - min(rms_n_r, thresh_yellow_n) * meter_h + 0.5);
+    yellow_y_r = floor(meter_bottom - min(rms_n_r, thresh_red_n) * meter_h + 0.5);
+    red_y_r = floor(meter_bottom - rms_n_r * meter_h + 0.5);
 
     gfx_set(0.25, 0.85, 0.25, 1); // green
-    gfx_rect(pad + bar_w, meter_bottom - green_h_r, bar_w, green_h_r);
+    gfx_rect(meter_mid, green_y_r, bar_w, meter_bottom - green_y_r);
 
-    gfx_set(1, 1, 0.3, 1); // yellow
-    gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r, bar_w, yellow_h_r);
+    rms_n_r > thresh_yellow_n ? (
+        gfx_set(1, 1, 0.3, 1); // yellow
+        gfx_rect(meter_mid, yellow_y_r, bar_w, green_y_r - yellow_y_r);
+    );
 
-    gfx_set(1, 0.3, 0.3, 1); // red
-    gfx_rect(pad + bar_w, meter_bottom - green_h_r - yellow_h_r - red_h_r, bar_w, red_h_r);
+    rms_n_r > thresh_red_n ? (
+        gfx_set(1, 0.3, 0.3, 1); // red
+        gfx_rect(meter_mid, red_y_r, bar_w, yellow_y_r - red_y_r);
+    );
 );
 
 // ----- Peak lines (L/R) -----
-peak_y_l = meter_bottom - (meter_h * peak_n_l);
-peak_y_r = meter_bottom - (meter_h * peak_n_r);
+peak_y_l = floor(meter_bottom - (meter_h * peak_n_l) + 0.5) + 0.5;
+peak_y_r = floor(meter_bottom - (meter_h * peak_n_r) + 0.5) + 0.5;
 
 non_k_mode ?
     gfx_set(1.00, 0.90, 0.25, vis_alpha_l) :
@@ -322,7 +333,7 @@ peak_k_l >= thresh_red ?
 peak_k_l >= thresh_yellow ?
     gfx_set(1, 1, 0.3, vis_alpha_l) :
     gfx_set(0.25, 0.85, 0.25, vis_alpha_l);
-gfx_line(pad, peak_y_l, pad + bar_w, peak_y_l);
+gfx_line(meter_left, peak_y_l, meter_mid, peak_y_l);
 
 non_k_mode ?
     gfx_set(1.00, 0.90, 0.25, vis_alpha_r) :
@@ -331,7 +342,7 @@ peak_k_r >= thresh_red ?
 peak_k_r >= thresh_yellow ?
     gfx_set(1, 1, 0.3, vis_alpha_r) :
     gfx_set(0.25, 0.85, 0.25, vis_alpha_r);
-gfx_line(pad + bar_w, peak_y_r, pad + meter_w, peak_y_r);
+gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
 
 //------------------------------------------------
 // Scale: user-defined dB increments
@@ -345,26 +356,41 @@ loop(steps + 1,
 (
     k_val = scale_min + i * scale_step;
     n = (k_val - scale_min) / scale_span;
-    y = meter_bottom - (meter_h * n);
-
-    // Set color based on K value
+    y_pix = floor(meter_bottom - (meter_h * n) + 0.5);
+    y = y_pix + 0.5;
+    fill_hit_l = rms_n_l * meter_h >= meter_bottom - y_pix;
+    fill_hit_r = rms_n_r * meter_h >= meter_bottom - y_pix;
     non_k_mode ? (
         gfx_set(0.85, 0.85, 0.85, 0.35);
     ) : (
         k_val >= thresh_red ?
-            gfx_set(1, 0.3, 0.3, 0.6) :     // red
+            gfx_set(1, 0.3, 0.3, 0.85) :
         k_val >= thresh_yellow ?
-            gfx_set(1, 1, 0.3, 0.6) :       // yellow
-            gfx_set(0.25, 0.85, 0.25, 0.6); // green
+            gfx_set(1, 1, 0.3, 0.85) :
+            gfx_set(0.25, 0.85, 0.25, 0.85);
     );
+    gfx_line(meter_left, y, meter_left + meter_w_line, y);
 
-    gfx_line(pad - 4, y, pad + meter_w + 4, y);
+    gfx_set(0.62, 0.62, 0.62, 0.55);
+    fill_hit_l ? gfx_line(meter_left, y, meter_mid, y);
+    fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
 
     // label near every 6 dB
     (i % label_every == 0) ? (
+        sprintf(#scale_lbl, "%+d", k_val);
+        gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
+        non_k_mode ? (
+            gfx_set(0.85, 0.85, 0.85, 0.85);
+        ) : (
+            k_val >= thresh_red ?
+                gfx_set(1, 0.3, 0.3, 0.95) :
+            k_val >= thresh_yellow ?
+                gfx_set(1, 1, 0.3, 0.95) :
+                gfx_set(0.25, 0.85, 0.25, 0.95);
+        );
         gfx_x = 2;
-        gfx_y = y - 6;
-        gfx_printf("%+d", k_val);
+        gfx_y = y_pix - scale_lbl_h + 1;
+        gfx_printf(#scale_lbl);
     );
 
     i += 1;
@@ -373,72 +399,122 @@ loop(steps + 1,
 top_tick_needed ? (
     k_val = scale_max;
     n = (k_val - scale_min) / scale_span;
-    y = meter_bottom - (meter_h * n);
-
+    y_pix = floor(meter_bottom - (meter_h * n) + 0.5);
+    y = y_pix + 0.5;
+    fill_hit_l = rms_n_l * meter_h >= meter_bottom - y_pix;
+    fill_hit_r = rms_n_r * meter_h >= meter_bottom - y_pix;
     non_k_mode ? (
         gfx_set(0.85, 0.85, 0.85, 0.35);
     ) : (
         k_val >= thresh_red ?
-            gfx_set(1, 0.3, 0.3, 0.6) :
+            gfx_set(1, 0.3, 0.3, 0.85) :
         k_val >= thresh_yellow ?
-            gfx_set(1, 1, 0.3, 0.6) :
-            gfx_set(0.25, 0.85, 0.25, 0.6);
+            gfx_set(1, 1, 0.3, 0.85) :
+            gfx_set(0.25, 0.85, 0.25, 0.85);
     );
+    gfx_line(meter_left, y, meter_left + meter_w_line, y);
 
-    gfx_line(pad - 4, y, pad + meter_w + 4, y);
+    gfx_set(0.62, 0.62, 0.62, 0.55);
+    fill_hit_l ? gfx_line(meter_left, y, meter_mid, y);
+    fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
+    sprintf(#scale_lbl, "%+d", k_val);
+    gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
+    non_k_mode ? (
+        gfx_set(0.85, 0.85, 0.85, 0.85);
+    ) : (
+        k_val >= thresh_red ?
+            gfx_set(1, 0.3, 0.3, 0.95) :
+        k_val >= thresh_yellow ?
+            gfx_set(1, 1, 0.3, 0.95) :
+            gfx_set(0.25, 0.85, 0.25, 0.95);
+    );
     gfx_x = 2;
-    gfx_y = y - 6;
-    gfx_printf("%+d", k_val);
+    gfx_y = y_pix - scale_lbl_h + 1;
+    gfx_printf(#scale_lbl);
 );
 
 //------------------------------------------------
 // Bottom Overlay Readout (L/R peak + RMS)
 //------------------------------------------------
 slider5 > 0 ? (
-    gfx_setfont(2,"Arial",12);
-    text_alpha = 0.9 * max(vis_alpha_l, vis_alpha_r);
-    gfx_set(1,1,1,text_alpha);
-    strcpy(#line2_lbl, "R ");
-    lufs_m_mode ? strcpy(#line2_lbl, "M ");
-    lufs_s_mode ? strcpy(#line2_lbl, "S ");
+    strcpy(#line2_lbl, " R ");
+    lufs_m_mode ? strcpy(#line2_lbl, " M ");
+    lufs_s_mode ? strcpy(#line2_lbl, " S ");
 
     disp_peak_db_l = silence_l ? -10000 : peak_db_l;
     disp_peak_db_r = silence_r ? -10000 : peak_db_r;
     disp_rms_db_l  = silence_l ? -10000 : rms_db_l;
     disp_rms_db_r  = silence_r ? -10000 : rms_db_r;
 
+    readout_can_fade =
+        disp_peak_db_l < -316 &&
+        disp_peak_db_r < -316 &&
+        disp_rms_db_l  < -316 &&
+        disp_rms_db_r  < -316;
+    text_alpha = 0.9 * (readout_can_fade ? max(vis_alpha_l, vis_alpha_r) : 1);
+
     disp_peak_db_l < -316 ? strcpy(#pk_l, "-inf") : sprintf(#pk_l, "%.1f", disp_peak_db_l);
     disp_peak_db_r < -316 ? strcpy(#pk_r, "-inf") : sprintf(#pk_r, "%.1f", disp_peak_db_r);
     disp_rms_db_l  < -316 ? strcpy(#rm_l, "-inf") : sprintf(#rm_l, "%.1f", disp_rms_db_l);
     disp_rms_db_r  < -316 ? strcpy(#rm_r, "-inf") : sprintf(#rm_r, "%.1f", disp_rms_db_r);
 
-    gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
-    gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
-    gfx_measurestr(#rm_l, rm_l_w, rm_l_h);
-    gfx_measurestr(#rm_r, rm_r_w, rm_r_h);
+    readout_font = 13;
+    readout_gap = 6;
+    min_side_width = 4;
+    font_fit = 0;
+    loop(2,
+        gfx_setfont(2,"Arial",readout_font);
+        gfx_measurestr(" P ", pk_lbl_w, pk_lbl_h);
+        gfx_measurestr(#line2_lbl, rm_lbl_w, rm_lbl_h);
+        gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
+        gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
+        gfx_measurestr(#rm_l, rm_l_w, rm_l_h);
+        gfx_measurestr(#rm_r, rm_r_w, rm_r_h);
 
-    y_peak = meter_bottom - (pk_l_h * 2) - 2;
-    y_rms  = meter_bottom - rm_l_h - 1;
+        peak_center_w = pk_lbl_w;
+        rms_center_w = rm_lbl_w;
+        peak_side_w = (meter_w - peak_center_w) * 0.5;
+        rms_side_w = (meter_w - rms_center_w) * 0.5;
+        font_fit =
+            pk_l_w <= peak_side_w - min_side_width &&
+            pk_r_w <= peak_side_w - min_side_width &&
+            rm_l_w <= rms_side_w - min_side_width &&
+            rm_r_w <= rms_side_w - min_side_width;
+        font_fit || readout_font <= 11 ? break;
+        readout_font -= 1;
+    );
+
+    peak_lbl_x = meter_mid - pk_lbl_w * 0.5;
+    rms_lbl_x = meter_mid - rm_lbl_w * 0.5;
+    peak_left_limit = peak_lbl_x;
+    peak_right_x = peak_lbl_x + pk_lbl_w;
+    rms_left_limit = rms_lbl_x;
+    rms_right_x = rms_lbl_x + rm_lbl_w;
+
+    y_peak = floor(meter_bottom - pk_l_h * 2 - 2 + 0.5);
+    y_rms  = floor(meter_bottom - rm_l_h - 1 + 0.5);
+
+    gfx_set(1,1,1,text_alpha);
 
     // Left peak  P  Right peak
-    gfx_x = pad + (bar_w - pk_l_w) * 0.5;
+    gfx_x = max(meter_left, peak_left_limit - pk_l_w);
     gfx_y = y_peak;
     gfx_printf(#pk_l);
-    gfx_x = pad + bar_w - 2;
+    gfx_x = peak_lbl_x;
     gfx_y = y_peak;
-    gfx_printf("P ");
-    gfx_x = pad + bar_w + (bar_w - pk_r_w) * 0.5 + 2;
+    gfx_printf(" P ");
+    gfx_x = peak_right_x;
     gfx_y = y_peak;
     gfx_printf(#pk_r);
 
-    // Left RMS  R  Right RMS
-    gfx_x = pad + (bar_w - rm_l_w) * 0.5;
+    // Left RMS  R/M/S  Right RMS
+    gfx_x = max(meter_left, rms_left_limit - rm_l_w);
     gfx_y = y_rms;
     gfx_printf(#rm_l);
-    gfx_x = pad + bar_w - 2;
+    gfx_x = rms_lbl_x;
     gfx_y = y_rms;
     gfx_printf(#line2_lbl);
-    gfx_x = pad + bar_w + (bar_w - rm_r_w) * 0.5 + 2;
+    gfx_x = rms_right_x;
     gfx_y = y_rms;
     gfx_printf(#rm_r);
 );
