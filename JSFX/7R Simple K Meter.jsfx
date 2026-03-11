@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.11
+version: 1.12
 about: A simple K meter JSFX
-changelog: - centered some elements
+changelog: - centered readout values
 options:no_meter
 
 
@@ -464,8 +464,10 @@ slider5 > 0 ? (
     font_fit = 0;
     loop(2,
         gfx_setfont(2,"Arial",readout_font);
-        gfx_measurestr(" P ", pk_lbl_w, pk_lbl_h);
-        gfx_measurestr(#line2_lbl, rm_lbl_w, rm_lbl_h);
+        gfx_measurestr("P ", pk_lbl_w, pk_lbl_h);
+        strcpy(#line2_lbl_draw, #line2_lbl);
+        str_getchar(#line2_lbl_draw, 0) == 32 ? str_delsub(#line2_lbl_draw, 0, 1);
+        gfx_measurestr(#line2_lbl_draw, rm_lbl_w, rm_lbl_h);
         gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
         gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
         gfx_measurestr(#rm_l, rm_l_w, rm_l_h);
@@ -486,9 +488,9 @@ slider5 > 0 ? (
 
     peak_lbl_x = meter_mid - pk_lbl_w * 0.5;
     rms_lbl_x = meter_mid - rm_lbl_w * 0.5;
-    peak_left_limit = peak_lbl_x;
+    peak_left_limit = peak_lbl_x - readout_gap;
     peak_right_x = peak_lbl_x + pk_lbl_w;
-    rms_left_limit = rms_lbl_x;
+    rms_left_limit = rms_lbl_x - readout_gap;
     rms_right_x = rms_lbl_x + rm_lbl_w;
 
     y_peak = floor(meter_bottom - pk_l_h * 2 - 2 + 0.5);
@@ -497,26 +499,24 @@ slider5 > 0 ? (
     gfx_set(1,1,1,text_alpha);
 
     // Left peak  P  Right peak
-    gfx_x = max(meter_left, peak_left_limit - pk_l_w);
+    gfx_x = peak_left_limit - pk_l_w;
     gfx_y = y_peak;
     gfx_printf(#pk_l);
     gfx_x = peak_lbl_x;
     gfx_y = y_peak;
-    gfx_printf(" P ");
+    gfx_printf("P ");
     gfx_x = peak_right_x;
     gfx_y = y_peak;
     gfx_printf(#pk_r);
 
     // Left RMS  R/M/S  Right RMS
-    gfx_x = max(meter_left, rms_left_limit - rm_l_w);
+    gfx_x = rms_left_limit - rm_l_w;
     gfx_y = y_rms;
     gfx_printf(#rm_l);
     gfx_x = rms_lbl_x;
     gfx_y = y_rms;
-    gfx_printf(#line2_lbl);
+    gfx_printf(#line2_lbl_draw);
     gfx_x = rms_right_x;
     gfx_y = y_rms;
     gfx_printf(#rm_r);
 );
-
-
