@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.8
-@changelog - insertion to master track under certain conditions fixed.
+@version 3.9
+@changelog - If FX chain already open, doesnt float FX window.
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
@@ -1292,6 +1292,50 @@ local function detect_and_set_target()
   end
 end
 
+local function is_fx_chain_window_open(target)
+    if not target or not target.obj then return false end
+
+    if target.type == "item" then
+        if type(reaper.TakeFX_GetChainVisible) ~= "function" then return false end
+        local take = reaper.GetActiveTake(target.obj)
+        if not take then return false end
+        local visible_fx = reaper.TakeFX_GetChainVisible(take)
+        return type(visible_fx) == "number" and visible_fx ~= -1
+    end
+
+    if type(reaper.TrackFX_GetChainVisible) ~= "function" then return false end
+    local visible_fx = reaper.TrackFX_GetChainVisible(target.obj)
+    return type(visible_fx) == "number" and visible_fx ~= -1
+end
+
+local function show_inserted_fx(target, fx_index)
+    if not target or not target.obj or fx_index < 0 then return end
+
+    -- If the chain is already open for this target, focus the newly added FX there
+    -- instead of creating a separate floating window.
+    local use_chain_window = (settings.fx_window_mode == 2)
+    if settings.fx_window_mode == 1 and is_fx_chain_window_open(target) then
+        use_chain_window = true
+    end
+
+    if target.type == "item" then
+        local take = reaper.GetActiveTake(target.obj)
+        if not take then return end
+        if use_chain_window then
+            reaper.TakeFX_Show(take, fx_index, 1)
+        elseif settings.fx_window_mode == 1 then
+            reaper.TakeFX_Show(take, fx_index, 3)
+        end
+        return
+    end
+
+    if use_chain_window then
+        reaper.TrackFX_Show(target.obj, fx_index, 1)
+    elseif settings.fx_window_mode == 1 then
+        reaper.TrackFX_Show(target.obj, fx_index, 3)
+    end
+end
+
 local function insert_fx(fx_name)
     if not fx_name then return false end
 
@@ -1469,19 +1513,7 @@ local function insert_fx(fx_name)
                 success_count = success_count + 1
                 -- Open window only for the first successful insertion
                 if success_count == 1 then
-                    if settings.fx_window_mode == 1 then
-                        if target.type == "item" then
-                            reaper.TakeFX_Show(reaper.GetActiveTake(target.obj), fx_index, 3)
-                        else
-                            reaper.TrackFX_Show(target.obj, fx_index, 3)
-                        end
-                    elseif settings.fx_window_mode == 2 then
-                        if target.type == "item" then
-                            reaper.TakeFX_Show(reaper.GetActiveTake(target.obj), fx_index, 1)
-                        else
-                            reaper.TrackFX_Show(target.obj, fx_index, 1)
-                        end
-                    end
+                    show_inserted_fx(target, fx_index)
                 end
             end
         end
