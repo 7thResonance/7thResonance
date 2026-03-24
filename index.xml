@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="25ef860f4528e5f2383c51ce93d382f25645e3da">
+<index version="1" name="7thResonance" commit="3b79756a8212d70ee046f8d47af7d47cc2d74989">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -342,6 +342,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="3.8" author="7thResonance" time="2026-03-10T15:53:05Z">
         <changelog><![CDATA[- insertion to master track under certain conditions fixed.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/b28bbcc155a276aecb29779a19d002afce8f5b61/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
+      </version>
+      <version name="3.9" author="7thResonance" time="2026-03-24T18:30:51Z">
+        <changelog><![CDATA[- If FX chain already open, doesnt float FX window.]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/3b79756a8212d70ee046f8d47af7d47cc2d74989/Utilities/7R%20Insert%20FX%20or%20Instruments%20or%20Track%20Template%20Under%20Mouse%20cursor%20(Track%20or%20Item,%20Master).lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert Instrument (Respecting Folders).lua" type="script" desc="7R Insert Instrument (Respecting Folders)">
