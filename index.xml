@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="3b79756a8212d70ee046f8d47af7d47cc2d74989">
+<index version="1" name="7thResonance" commit="1a9cee2214d3dfa28f9635a8b5a88b8e1a3c4fea">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -232,6 +232,21 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
     </reapack>
   </category>
   <category name="Utilities">
+    <reapack name="7R Chord Item Recorder.lua" type="script" desc="7R Chord Item Recorder">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Creates real-time chord labels from live MIDI input. Run this as a deferred script while the transport is playing or recording. The script watches the selected record-armed MIDI track (or the first armed MIDI track it can find), detects held note groups, and outputs them as empty items on a chord track.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Chord names are adapted from FeedTheCat's Lil Chordbox naming table.\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.1" author="7thResonance" time="2026-03-25T18:59:08Z">
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/1a9cee2214d3dfa28f9635a8b5a88b8e1a3c4fea/Utilities/7R%20Chord%20Item%20Recorder.lua</source>
+      </version>
+    </reapack>
     <reapack name="7R FX Link (Relative).lua" type="script" desc="7R FX Link (Relative)">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
