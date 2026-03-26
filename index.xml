@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="49b8ccd14f9a27a4907f4965a46858085f6466f7">
+<index version="1" name="7thResonance" commit="0a23833a5e700221e622ffe4e54f9581df92790b">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -252,6 +252,14 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 - region lane handling improivemant.
 - On playback/recording end, last chord extends to fill the measure.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/49b8ccd14f9a27a4907f4965a46858085f6466f7/Utilities/7R%20Chord%20Item%20Recorder.lua</source>
+      </version>
+      <version name="0.3" author="7thResonance" time="2026-03-26T15:43:21Z">
+        <changelog><![CDATA[- Looped recording improved
+- fixed lane support (value at the top of the script)
+- region lane handling improivemant.
+- On playback/recording end, last chord extends to fill the measure.
+- Defaulted to item mode]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/0a23833a5e700221e622ffe4e54f9581df92790b/Utilities/7R%20Chord%20Item%20Recorder.lua</source>
       </version>
     </reapack>
     <reapack name="7R FX Link (Relative).lua" type="script" desc="7R FX Link (Relative)">
