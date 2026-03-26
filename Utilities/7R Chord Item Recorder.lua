@@ -1,7 +1,12 @@
 --[[
   @description 7R Chord Item Recorder
-  @version 0.1
+  @version 0.2
   @author 7thResonance
+  @changelog 
+    - Looped recording improved
+    - fixed lane support
+    - region lane handling improivemant.
+    - On playback/recording end, last chord extends to fill the measure.
   @about
     Creates real-time chord labels from live MIDI input.
     Run this as a deferred script while the transport is playing or recording.
@@ -13,6 +18,7 @@
 ]]
 
 local OUTPUT_MODE = 0 -- 0 = track items, 1 = regions in ruler lane named "Chords"
+local USE_FIXED_LANES = 1 -- item mode only: 0 = disabled, 1 = write each script pass to its own fixed lane on the chord track
 
 local EXTNAME = "FTC.LilChordBox"
 local DEFAULT_CHORD_TRACK_NAME = "Chords"
@@ -22,6 +28,7 @@ local GROUP_DEBOUNCE = 0.08
 local MIN_ITEM_LENGTH = 0.05
 local LIVE_UPDATE_STEP = 0.03
 local QUANTIZE_EPSILON = 0.000001
+local PLAYBACK_JUMP_EPSILON = 0.01
 
 local _, _, section, command_id = reaper.get_action_context()
 
@@ -176,7 +183,22 @@ local prev_input_idx
 
 local current_source_track
 local current_chord_track
+local current_chord_lane
 local current_region_lane
+local current_region_lane_name = REGION_LANE_NAME
+local region_lane_anchor_guid
+
+if type(reaper.GetProjExtState) == "function" then
+    local _, saved_lane_name = reaper.GetProjExtState(0, EXTNAME, "region_lane_name")
+    if saved_lane_name ~= "" then
+        current_region_lane_name = saved_lane_name
+    end
+
+    local _, saved_lane_anchor_guid = reaper.GetProjExtState(0, EXTNAME, "region_lane_anchor_guid")
+    if saved_lane_anchor_guid ~= "" then
+        region_lane_anchor_guid = saved_lane_anchor_guid
+    end
+end
 
 local pending_name
 local pending_anchor_pos
@@ -204,12 +226,22 @@ local function SetToggleState(state)
     reaper.RefreshToolbar2(section, command_id)
 end
 
+local function IsFixedLaneModeEnabled()
+    return OUTPUT_MODE == 0 and USE_FIXED_LANES == 1
+end
+
 local function LoadChordNames()
     curr_chord_names = {}
     local key = use_compact and "compact" or "expanded"
     for interval_key, names in pairs(chord_names) do
         curr_chord_names[interval_key] = names[key]
     end
+end
+
+local function ClearPendingState()
+    pending_name = nil
+    pending_anchor_pos = nil
+    pending_change_pos = nil
 end
 
 local function PitchToName(pitch)
@@ -337,9 +369,7 @@ local function ClearInputState()
     prev_input_idx = nil
     input_note_map = {}
     input_note_cnt = 0
-    pending_name = nil
-    pending_anchor_pos = nil
-    pending_change_pos = nil
+    ClearPendingState()
 end
 
 local function SnapshotHeldNotes()
@@ -370,6 +400,18 @@ local function GetCapturePosition()
         return reaper.GetPlayPosition2()
     end
     return reaper.GetPlayPosition()
+end
+
+local function GetLoopRange()
+    if type(reaper.GetSetRepeat) ~= "function" or reaper.GetSetRepeat(-1) ~= 1 then
+        return nil
+    end
+    if type(reaper.GetSet_LoopTimeRange2) == "function" then
+        local loop_start, loop_end = reaper.GetSet_LoopTimeRange2(0, false, true, 0, 0, false)
+        if loop_end > loop_start + QUANTIZE_EPSILON then
+            return loop_start, loop_end
+        end
+    end
 end
 
 local function GetQuantizeInfoAtTime(time)
@@ -430,6 +472,18 @@ local function QuantizeTransitionTime(time, previous_time)
     return snapped_time or time
 end
 
+local function GetNextBarTime(time)
+    if not time then
+        return nil
+    end
+
+    local qn = reaper.TimeMap2_timeToQN(0, time + QUANTIZE_EPSILON)
+    local _, _, measure_end_qn = reaper.TimeMap_QNToMeasures(0, qn)
+    measure_end_qn = measure_end_qn or qn
+
+    return reaper.TimeMap2_QNToTime(0, measure_end_qn)
+end
+
 local function IsTrackRecordingMIDI(track)
     if not track then
         return false
@@ -484,7 +538,21 @@ local function GetRulerLaneNames()
     return names
 end
 
+local function GetRulerLaneName(index)
+    if index == nil or index < 0 then
+        return nil
+    end
+    local ok, name = reaper.GetSetProjectInfo_String(0, "RULER_LANE_NAME:" .. index, "", false)
+    if not ok then
+        return nil
+    end
+    return name or ""
+end
+
 local function FindRegionLaneByName(name)
+    if not name or name == "" then
+        return nil
+    end
     local names = GetRulerLaneNames()
     for i = 1, #names do
         if names[i] == name then
@@ -528,18 +596,72 @@ local function TryCreateRegionLane(name)
     end
 end
 
+local function GetRegionObjectByGUID(guid)
+    if not guid or guid == "" then
+        return nil
+    end
+    return reaper.GetRegionOrMarker(0, -1, guid)
+end
+
+local function RememberRegionLane(lane_index, anchor_guid)
+    if lane_index == nil then
+        return
+    end
+    current_region_lane = lane_index
+    current_region_lane_name = REGION_LANE_NAME
+
+    if anchor_guid and anchor_guid ~= "" then
+        region_lane_anchor_guid = anchor_guid
+    end
+
+    if type(reaper.SetProjExtState) == "function" then
+        reaper.SetProjExtState(0, EXTNAME, "region_lane_name", current_region_lane_name or "")
+        reaper.SetProjExtState(0, EXTNAME, "region_lane_anchor_guid", region_lane_anchor_guid or "")
+    end
+end
+
+local function ResolveRegionLaneFromGuid(guid)
+    local marker = GetRegionObjectByGUID(guid)
+    if not marker then
+        return nil
+    end
+    return math.floor(reaper.GetRegionOrMarkerInfo_Value(0, marker, "I_LANENUMBER") or -1)
+end
+
+local function ResolveKnownRegionLane()
+    local lane_name = GetRulerLaneName(current_region_lane)
+    if lane_name == REGION_LANE_NAME then
+        RememberRegionLane(current_region_lane)
+        return current_region_lane
+    end
+
+    local lane_index = FindRegionLaneByName(REGION_LANE_NAME)
+    if lane_index ~= nil then
+        RememberRegionLane(lane_index)
+        return lane_index
+    end
+end
+
 local function EnsureRegionLane(name)
-    local lane_index = FindRegionLaneByName(name)
+    local lane_index = ResolveKnownRegionLane()
     if lane_index ~= nil then
         reaper.GetSetProjectInfo(0, "RULER_LANE_HIDDEN:" .. lane_index, 0, true)
+        RememberRegionLane(lane_index)
         return lane_index
     end
 
-    lane_index = TryCreateRegionLane(name)
+    lane_index = TryCreateRegionLane(REGION_LANE_NAME)
     if lane_index ~= nil then
         reaper.GetSetProjectInfo(0, "RULER_LANE_HIDDEN:" .. lane_index, 0, true)
+        RememberRegionLane(lane_index)
         return lane_index
     end
+end
+
+local function ResolveWritableRegionLane()
+    local lane_index = EnsureRegionLane(REGION_LANE_NAME)
+    current_region_lane = lane_index
+    return lane_index
 end
 
 local function FindChordTrack(source_track)
@@ -574,6 +696,77 @@ local function EnsureChordTrack(source_track)
     return track
 end
 
+local function IsTrackUsingFixedLanes(track)
+    if not track then
+        return false
+    end
+    return math.floor(reaper.GetMediaTrackInfo_Value(track, "I_FREEMODE") or 0) == 2
+end
+
+local function RefreshTimelineIfNeeded()
+    if type(reaper.UpdateTimeline) == "function" then
+        reaper.UpdateTimeline()
+    end
+    needs_arrange_update = true
+end
+
+local function EnsureFixedLaneCapacity(track, lane_index)
+    if not track then
+        return
+    end
+
+    local changed = false
+    if not IsTrackUsingFixedLanes(track) then
+        reaper.SetMediaTrackInfo_Value(track, "I_FREEMODE", 2)
+        changed = true
+    end
+
+    lane_index = math.max(0, math.floor(lane_index or 0))
+    local lane_count = math.floor(reaper.GetMediaTrackInfo_Value(track, "I_NUMFIXEDLANES") or 0)
+    local required_lanes = lane_index + 1
+    if lane_count < required_lanes then
+        reaper.SetMediaTrackInfo_Value(track, "I_NUMFIXEDLANES", required_lanes)
+        changed = true
+    end
+
+    if changed then
+        RefreshTimelineIfNeeded()
+    end
+end
+
+local function GetItemLaneIndex(item)
+    if not item then
+        return nil
+    end
+    return math.max(0, math.floor(reaper.GetMediaItemInfo_Value(item, "I_FIXEDLANE") or 0))
+end
+
+local function ResolveChordTrackLane(track)
+    if not IsFixedLaneModeEnabled() or not track then
+        current_chord_lane = nil
+        return nil
+    end
+
+    if current_chord_lane ~= nil then
+        EnsureFixedLaneCapacity(track, current_chord_lane)
+        return current_chord_lane
+    end
+
+    local lane_index = 0
+    if reaper.CountTrackMediaItems(track) > 0 then
+        local highest_lane = -1
+        for i = 0, reaper.CountTrackMediaItems(track) - 1 do
+            local item = reaper.GetTrackMediaItem(track, i)
+            highest_lane = math.max(highest_lane, GetItemLaneIndex(item) or 0)
+        end
+        lane_index = highest_lane + 1
+    end
+
+    EnsureFixedLaneCapacity(track, lane_index)
+    current_chord_lane = lane_index
+    return lane_index
+end
+
 local function CopyItemNotesAndStyle(src_item, dst_item)
     if not src_item or not dst_item then
         return
@@ -586,6 +779,10 @@ local function CopyItemNotesAndStyle(src_item, dst_item)
     if color and color ~= 0 then
         reaper.SetMediaItemInfo_Value(dst_item, "I_CUSTOMCOLOR", color)
     end
+
+    reaper.SetMediaItemInfo_Value(dst_item, "I_FIXEDLANE", reaper.GetMediaItemInfo_Value(src_item, "I_FIXEDLANE") or 0)
+    reaper.SetMediaItemInfo_Value(dst_item, "F_FREEMODE_Y", reaper.GetMediaItemInfo_Value(src_item, "F_FREEMODE_Y") or 0)
+    reaper.SetMediaItemInfo_Value(dst_item, "F_FREEMODE_H", reaper.GetMediaItemInfo_Value(src_item, "F_FREEMODE_H") or 1)
 end
 
 local function CreateRightSplitItem(track, src_item, start_pos, end_pos)
@@ -597,7 +794,7 @@ local function CreateRightSplitItem(track, src_item, start_pos, end_pos)
     return new_item
 end
 
-local function ResolveOverlappingItems(track, start_pos, end_pos, keep_item)
+local function ResolveOverlappingItems(track, start_pos, end_pos, keep_item, lane_index)
     if not track then
         return
     end
@@ -605,24 +802,26 @@ local function ResolveOverlappingItems(track, start_pos, end_pos, keep_item)
     for i = reaper.CountTrackMediaItems(track) - 1, 0, -1 do
         local item = reaper.GetTrackMediaItem(track, i)
         if item ~= keep_item then
-            local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-            local item_end = item_start + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-            if item_start < end_pos and item_end > start_pos then
-                local keep_left = item_start < start_pos - QUANTIZE_EPSILON
-                local keep_right = item_end > end_pos + QUANTIZE_EPSILON
+            if lane_index == nil or GetItemLaneIndex(item) == lane_index then
+                local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local item_end = item_start + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                if item_start < end_pos and item_end > start_pos then
+                    local keep_left = item_start < start_pos - QUANTIZE_EPSILON
+                    local keep_right = item_end > end_pos + QUANTIZE_EPSILON
 
-                if keep_left and keep_right then
-                    CreateRightSplitItem(track, item, end_pos, item_end)
-                    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, start_pos - item_start))
-                elseif keep_left then
-                    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, start_pos - item_start))
-                elseif keep_right then
-                    reaper.SetMediaItemInfo_Value(item, "D_POSITION", end_pos)
-                    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, item_end - end_pos))
-                else
-                    reaper.DeleteTrackMediaItem(track, item)
+                    if keep_left and keep_right then
+                        CreateRightSplitItem(track, item, end_pos, item_end)
+                        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, start_pos - item_start))
+                    elseif keep_left then
+                        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, start_pos - item_start))
+                    elseif keep_right then
+                        reaper.SetMediaItemInfo_Value(item, "D_POSITION", end_pos)
+                        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0, item_end - end_pos))
+                    else
+                        reaper.DeleteTrackMediaItem(track, item)
+                    end
+                    needs_arrange_update = true
                 end
-                needs_arrange_update = true
             end
         end
     end
@@ -636,13 +835,6 @@ local function FindProjectRegionInternalIndex(display_index)
             return i
         end
     end
-end
-
-local function GetRegionObjectByGUID(guid)
-    if not guid or guid == "" then
-        return nil
-    end
-    return reaper.GetRegionOrMarker(0, -1, guid)
 end
 
 local function CreateRegionInLane(start_pos, end_pos, name, lane_number, color)
@@ -696,6 +888,9 @@ local function ResolveOverlappingRegions(lane_number, start_pos, end_pos, keep_g
 end
 
 local function ClearActiveChordState()
+    if active_region_guid and active_region_guid ~= "" then
+        region_lane_anchor_guid = active_region_guid
+    end
     active_item = nil
     active_track = nil
     active_name = nil
@@ -705,7 +900,7 @@ local function ClearActiveChordState()
     active_region_lane = nil
 end
 
-local function UpdateActiveChordLength(current_pos, force)
+local function UpdateActiveChordLength(current_pos, force, clamp_end_pos)
     if not active_start_pos or not current_pos then
         return
     end
@@ -723,7 +918,13 @@ local function UpdateActiveChordLength(current_pos, force)
         end
     end
 
-    end_pos = math.max(active_start_pos + MIN_ITEM_LENGTH, end_pos)
+    local min_end_pos = active_start_pos + MIN_ITEM_LENGTH
+    if clamp_end_pos and clamp_end_pos > active_start_pos + QUANTIZE_EPSILON then
+        min_end_pos = math.min(min_end_pos, clamp_end_pos)
+        end_pos = math.min(end_pos, clamp_end_pos)
+    end
+
+    end_pos = math.max(min_end_pos, end_pos)
 
     if OUTPUT_MODE == 0 then
         if not active_item or not reaper.ValidatePtr(active_item, "MediaItem*") then
@@ -736,6 +937,10 @@ local function UpdateActiveChordLength(current_pos, force)
         if not marker then
             ClearActiveChordState()
             return
+        end
+        local lane_number = math.floor(reaper.GetRegionOrMarkerInfo_Value(0, marker, "I_LANENUMBER") or -1)
+        if lane_number >= 0 then
+            RememberRegionLane(lane_number, active_region_guid)
         end
         reaper.SetRegionOrMarkerInfo_Value(0, marker, "D_ENDPOS", end_pos)
     end
@@ -767,24 +972,27 @@ local function StartActiveChord(name, start_pos, is_quantized)
             return
         end
 
+        local lane_index = ResolveChordTrackLane(track)
+
         local item = reaper.AddMediaItemToTrack(track)
         reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_pos)
         reaper.SetMediaItemInfo_Value(item, "D_LENGTH", MIN_ITEM_LENGTH)
         reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
         reaper.GetSetMediaItemInfo_String(item, "P_NOTES", name, true)
+        if lane_index ~= nil then
+            reaper.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane_index)
+        end
 
+        current_chord_track = track
         active_item = item
         active_track = track
     else
-        local lane_number = current_region_lane
-        if lane_number == nil then
-            lane_number = EnsureRegionLane(REGION_LANE_NAME)
-            current_region_lane = lane_number
-        end
+        -- Re-resolve every time so renamed/reordered ruler lanes keep working.
+        local lane_number = ResolveWritableRegionLane()
         if lane_number == nil then
             if not region_lane_create_warned then
                 region_lane_create_warned = true
-                reaper.MB("Could not find or create a ruler lane named '" .. REGION_LANE_NAME .. "'.", "Chord track", 0)
+                reaper.MB("Could not find or create a ruler lane for chord regions.", "Chord track", 0)
             end
             ClearActiveChordState()
             return
@@ -808,12 +1016,14 @@ local function StartActiveChord(name, start_pos, is_quantized)
 
         active_region_guid = guid
         active_region_lane = lane_number
+        current_region_lane = lane_number
+        RememberRegionLane(lane_number, guid)
     end
 
     UpdateActiveChordLength(last_capture_pos or start_pos, false)
 end
 
-local function FinalizeActiveChord(end_pos)
+local function FinalizeActiveChord(end_pos, clamp_end_pos)
     if not active_name or not active_start_pos then
         ClearActiveChordState()
         return
@@ -824,18 +1034,22 @@ local function FinalizeActiveChord(end_pos)
         end_pos = active_start_pos
     end
 
-    UpdateActiveChordLength(end_pos, true)
+    UpdateActiveChordLength(end_pos, true, clamp_end_pos)
 
     if OUTPUT_MODE == 0 then
         if active_item and active_track and reaper.ValidatePtr(active_item, "MediaItem*") then
             local length = reaper.GetMediaItemInfo_Value(active_item, "D_LENGTH")
-            ResolveOverlappingItems(active_track, active_start_pos, active_start_pos + length, active_item)
+            ResolveOverlappingItems(active_track, active_start_pos, active_start_pos + length, active_item, current_chord_lane)
         end
     else
         local marker = GetRegionObjectByGUID(active_region_guid)
         if marker then
+            local lane_number = math.floor(reaper.GetRegionOrMarkerInfo_Value(0, marker, "I_LANENUMBER") or active_region_lane or -1)
             local region_end = reaper.GetRegionOrMarkerInfo_Value(0, marker, "D_ENDPOS")
-            ResolveOverlappingRegions(active_region_lane, active_start_pos, region_end, active_region_guid)
+            if lane_number >= 0 then
+                RememberRegionLane(lane_number, active_region_guid)
+                ResolveOverlappingRegions(lane_number, active_start_pos, region_end, active_region_guid)
+            end
         end
     end
 
@@ -915,15 +1129,13 @@ local function ApplyPendingState(current_pos)
             if OUTPUT_MODE == 0 then
                 current_chord_track = EnsureChordTrack(current_source_track)
             else
-                current_region_lane = current_region_lane or EnsureRegionLane(REGION_LANE_NAME)
+                current_region_lane = ResolveWritableRegionLane()
             end
             StartActiveChord(pending_name, split_pos, true)
         end
     end
 
-    pending_name = nil
-    pending_anchor_pos = nil
-    pending_change_pos = nil
+    ClearPendingState()
 end
 
 local function HandleInputChange(current_pos)
@@ -948,13 +1160,9 @@ local function HandleInputChange(current_pos)
         end
 
         if chord_name == active_name then
-            pending_anchor_pos = nil
-            pending_name = nil
-            pending_change_pos = nil
+            ClearPendingState()
         elseif input_note_cnt == 0 then
-            pending_anchor_pos = nil
-            pending_name = nil
-            pending_change_pos = nil
+            ClearPendingState()
         end
 
         return
@@ -974,9 +1182,42 @@ local function HandleInputChange(current_pos)
         pending_name = chord_name
         pending_change_pos = current_pos
     elseif input_note_cnt == 0 then
-        pending_anchor_pos = nil
-        pending_name = nil
-        pending_change_pos = nil
+        ClearPendingState()
+    end
+end
+
+local function HandlePlaybackJump(previous_pos, current_pos)
+    if not previous_pos or not current_pos then
+        return
+    end
+    if current_pos >= previous_pos - PLAYBACK_JUMP_EPSILON then
+        return
+    end
+
+    local split_pos = previous_pos
+    local loop_start, loop_end = GetLoopRange()
+    if loop_start and loop_end
+        and previous_pos >= loop_start - PLAYBACK_JUMP_EPSILON
+        and current_pos <= loop_end + PLAYBACK_JUMP_EPSILON then
+        split_pos = loop_end
+    end
+
+    ClearPendingState()
+    if active_name then
+        FinalizeActiveChord(split_pos, split_pos)
+    end
+    if IsFixedLaneModeEnabled() then
+        current_chord_lane = nil
+    end
+
+    local resumed_name = GetHeldChordName()
+    if resumed_name ~= "" then
+        if OUTPUT_MODE == 0 then
+            current_chord_track = EnsureChordTrack(current_source_track)
+        else
+            current_region_lane = ResolveWritableRegionLane()
+        end
+        StartActiveChord(resumed_name, current_pos, true)
     end
 end
 
@@ -996,6 +1237,7 @@ local function Main()
 
     local transport_active = IsTransportActive()
     local capture_pos = transport_active and GetCapturePosition() or nil
+    local previous_capture_pos = last_capture_pos
 
     if capture_pos then
         last_capture_pos = capture_pos
@@ -1006,12 +1248,13 @@ local function Main()
         FlushActiveState(last_capture_pos)
         current_source_track = source_track
         current_chord_track = nil
-        current_region_lane = nil
+        current_chord_lane = nil
     end
 
     if not transport_active then
         if last_transport_active then
-            FlushActiveState(last_capture_pos)
+            FlushActiveState(GetNextBarTime(last_capture_pos) or last_capture_pos)
+            current_chord_lane = nil
         end
         last_transport_active = false
         if needs_arrange_update then
@@ -1032,6 +1275,8 @@ local function Main()
         reaper.defer(Main)
         return
     end
+
+    HandlePlaybackJump(previous_capture_pos, capture_pos)
 
     HandleInputChange(capture_pos)
     ApplyPendingState(capture_pos)
