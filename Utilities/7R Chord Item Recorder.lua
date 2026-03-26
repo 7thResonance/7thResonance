@@ -1,12 +1,13 @@
 --[[
   @description 7R Chord Item Recorder
-  @version 0.2
+  @version 0.3
   @author 7thResonance
   @changelog 
     - Looped recording improved
-    - fixed lane support
+    - fixed lane support (value at the top of the script)
     - region lane handling improivemant.
     - On playback/recording end, last chord extends to fill the measure.
+    - Defaulted to item mode
   @about
     Creates real-time chord labels from live MIDI input.
     Run this as a deferred script while the transport is playing or recording.
@@ -18,7 +19,7 @@
 ]]
 
 local OUTPUT_MODE = 0 -- 0 = track items, 1 = regions in ruler lane named "Chords"
-local USE_FIXED_LANES = 1 -- item mode only: 0 = disabled, 1 = write each script pass to its own fixed lane on the chord track
+local USE_FIXED_LANES = 0 -- item mode only: 0 = disabled, 1 = write each script pass to its own fixed lane on the chord track
 
 local EXTNAME = "FTC.LilChordBox"
 local DEFAULT_CHORD_TRACK_NAME = "Chords"
