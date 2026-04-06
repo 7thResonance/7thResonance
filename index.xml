@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="b1a1bf50de1600c449231abe6b2110b0edf37bca">
+<index version="1" name="7thResonance" commit="a92aace6899cf0e1078a4ab8692ce0f6183564ec">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -145,6 +145,10 @@
       <version name="1.17" author="7thResonance" time="2026-04-06T05:41:36Z">
         <changelog><![CDATA[- slowed down crest factor read out value]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/095e14d17f432a47ae9e69f26777dc5eac1cb292/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
+      </version>
+      <version name="1.18" author="7thResonance" time="2026-04-06T06:47:25Z">
+        <changelog><![CDATA[- moved crest factor read out value]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/a92aace6899cf0e1078a4ab8692ce0f6183564ec/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
