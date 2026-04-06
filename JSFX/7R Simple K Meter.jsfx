@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.17
+version: 1.18
 about: A simple K meter JSFX
-changelog:  - slowed down crest factor read out value
+changelog:  - moved crest factor read out value
 options:no_meter
 
 
@@ -691,11 +691,10 @@ slider5 > 0 ? (
         sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_readout_r);
         crest_text_alpha_l = 0.9 * (silence_l ? vis_alpha_l : 1);
         crest_text_alpha_r = 0.9 * (silence_r ? vis_alpha_r : 1);
-        crest_text_y = meter_top + 2;
-        crest_center_l = meter_left + bar_w * 0.5;
-        crest_center_r = meter_mid + bar_w * 0.5;
+        crest_text_y = crest_anchor_y + 2;
+        crest_center_l = crest_bar_l_x + crest_bar_w * 0.5;
+        crest_center_r = crest_bar_r_x + crest_bar_w * 0.5;
         crest_readout_font = readout_font + 1;
-
         gfx_setfont(2,"Arial",crest_readout_font);
 
         gfx_measurestr(#crest_top_l, crest_top_l_w, crest_top_l_h);
