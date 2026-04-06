@@ -1,13 +1,13 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.5
+version: 1.6
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: added octave smoothening
+changelog: normalisation now follows post smoothening
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -708,7 +708,10 @@ update ? (
   norm_offset_hold = norm_offset_hold ? norm_offset_hold : 0;
   // smoothing coefficient already set in @init; tweak norm_smooth if needed
 
-  // find peak in dB
+  // Apply octave smoothing before calculating peak for normalization
+  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio);
+
+  // find peak in dB from smoothed data
   peak_db = -1000;
   i=0;
   // conversion factor ln(power) -> dB: Kdb = 10 / ln(10)
@@ -755,8 +758,6 @@ slider12 > 0.5 ? (
     i += 1;
   );
   // --- END NEW: Normalisation ---
-  
-  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio);
 
   buf2=integrate_buf;
   lx=0;
@@ -853,15 +854,20 @@ slider12 > 0.5 ? (
     // store ln(power)
     mag_buf_temp[i] = log(sqr(mag));
 
-    // --- NEW: apply same normalisation offset to derived stream so side graph matches main ---
-    mag_buf_temp[i] -= ln_offset;
-    // --- END NEW ---
-
     buf3+=2;
     i+=1;
   );
   
+  // Apply octave smoothing to derived before normalization
   octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio);
+  
+  // --- NEW: apply same normalisation offset to derived stream so side graph matches main ---
+  i=0;
+  loop(fftsize*0.5,
+    mag_buf_temp[i] -= ln_offset;
+    i += 1;
+  );
+  // --- END NEW ---
   
   // draw overlay (red polyline)
   buf2=integrate_buf2;
