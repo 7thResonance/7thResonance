@@ -1,10 +1,9 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.15
+version: 1.16
 about: A simple K meter JSFX
-changelog:  - revised metering text.
-            - added crest factor/dyanmics metering
-            - Changed defaults
+changelog:  - revised metering accuracy
+            - Added mouse hover value read out
 options:no_meter
 
 
@@ -37,6 +36,8 @@ rms_acc_l = 0;
 rms_acc_r = 0;
 lufs_m_acc_l = 0;
 lufs_m_acc_r = 0;
+lufs_s_acc_l = 0;
+lufs_s_acc_r = 0;
 rms_out_l = 0;
 rms_out_r = 0;
 crest_out_l = 0;
@@ -122,6 +123,8 @@ srate != last_sr ? (
     f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
     lufs_m_acc_l = 0;
     lufs_m_acc_r = 0;
+    lufs_s_acc_l = 0;
+    lufs_s_acc_r = 0;
     crest_out_l = crest_out_r = 0;
 );
 
@@ -180,6 +183,15 @@ lufs_mode ? (
 ) : (
     lufs_m_acc_l = 0;
     lufs_m_acc_r = 0;
+);
+
+lufs_mode ? (
+    lufs_s_tc = exp(-1 / (3 * srate));
+    lufs_s_acc_l = lufs_s_tc * lufs_s_acc_l + (1 - lufs_s_tc) * (rms_in_l * rms_in_l);
+    lufs_s_acc_r = lufs_s_tc * lufs_s_acc_r + (1 - lufs_s_tc) * (rms_in_r * rms_in_r);
+) : (
+    lufs_s_acc_l = 0;
+    lufs_s_acc_r = 0;
 );
 
 // Peak with two-stage falloff:
@@ -322,15 +334,9 @@ lufs_mode ? (
     lufs_sum = max(rms_acc_l + rms_acc_r, EPS);
     lufs_stereo_db = -0.691 + 10 * log10(lufs_sum);
     lufs_momentary_db = -0.691 + 10 * log10(max(lufs_m_acc_l + lufs_m_acc_r, EPS));
-    rms_db_l = lufs_stereo_db;
-    rms_db_r = lufs_stereo_db;
+    lufs_short_db = -0.691 + 10 * log10(max(lufs_s_acc_l + lufs_s_acc_r, EPS));
     rms_high_db_l = -0.691 + 20 * log10(max(rms_high_out_l, EPS));
     rms_high_db_r = -0.691 + 20 * log10(max(rms_high_out_r, EPS));
-) : (
-    rms_db_l += 3;
-    rms_db_r += 3;
-    rms_high_db_l += 3;
-    rms_high_db_r += 3;
 );
 
 crest_db_l = crest_out_l;
@@ -339,8 +345,16 @@ crest_readout_db_l = max(peak_db_l - (lufs_mode ? lufs_momentary_db : rms_db_l),
 crest_readout_db_r = max(peak_db_r - (lufs_mode ? lufs_momentary_db : rms_db_r), 0);
 
 // ----- K mapping -----
-rms_k_l  = non_k_mode ? rms_db_l  : (rms_db_l  + k_ref);
-rms_k_r  = non_k_mode ? rms_db_r  : (rms_db_r  + k_ref);
+lufs_m_mode ? (
+    rms_k_l = lufs_momentary_db;
+    rms_k_r = lufs_momentary_db;
+) : lufs_s_mode ? (
+    rms_k_l = lufs_short_db;
+    rms_k_r = lufs_short_db;
+) : (
+    rms_k_l = non_k_mode ? rms_db_l : (rms_db_l + k_ref);
+    rms_k_r = non_k_mode ? rms_db_r : (rms_db_r + k_ref);
+);
 rms_high_k_l = non_k_mode ? rms_high_db_l : (rms_high_db_l + k_ref);
 rms_high_k_r = non_k_mode ? rms_high_db_r : (rms_high_db_r + k_ref);
 peak_k_l = non_k_mode ? peak_db_l : (peak_db_l + k_ref);
@@ -647,8 +661,8 @@ slider5 > 0 ? (
     draw_outlined_text(#rm_r, rms_right_x, y_rms, text_alpha);
 
     slider13 > 0 ? (
-        sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_readout_db_l);
-        sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_readout_db_r);
+        sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_out_l);
+        sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_out_r);
         crest_text_alpha_l = 0.9 * (silence_l ? vis_alpha_l : 1);
         crest_text_alpha_r = 0.9 * (silence_r ? vis_alpha_r : 1);
         crest_text_y = meter_top + 2;
@@ -663,5 +677,20 @@ slider5 > 0 ? (
 
         gfx_measurestr(#crest_top_r, crest_top_r_w, crest_top_r_h);
         draw_outlined_text(#crest_top_r, crest_center_r - crest_top_r_w * 0.5, crest_text_y, crest_text_alpha_r);
+    );
+);
+
+// Mouse over: draw pink line and dB value
+mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
+    // Pink line
+    gfx_set(1, 0, 1, 1);
+    gfx_line(meter_left, mouse_y, meter_right, mouse_y);
+
+    // dB value if over meter
+    mouse_y >= meter_top && mouse_y <= meter_bottom ? (
+        n = (meter_bottom - mouse_y) / meter_h;
+        mouse_k_val = scale_min + n * scale_span;
+        sprintf(#mouse_db, "%.1f", mouse_k_val);
+        draw_outlined_text(#mouse_db, mouse_x + 10, mouse_y - 10, 1);
     );
 );
