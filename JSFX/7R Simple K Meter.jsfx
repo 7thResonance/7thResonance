@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.13
+version: 1.14
 about: A simple K meter JSFX
-changelog: - now numbering also obeys the divison parameter
+changelog: - added RMS and Peak hold line switches.
 options:no_meter
 
 
@@ -19,6 +19,8 @@ slider7:18<-48,48,1>Scale Max (K)
 slider8:3<1,12,1>Scale Step (dB)
 slider9:0<-120,48,1>Yellow Starts At (K)
 slider10:4<-120,48,1>Red Starts At (K)
+slider11:1<0,1,1{Off,On}>Show Peak High Line
+slider12:1<0,1,1{Off,On}>Show RMS High Line
 
 //------------------------------------------------
 // Constants
@@ -32,6 +34,10 @@ rms_acc_l = 0;
 rms_acc_r = 0;
 rms_out_l = 0;
 rms_out_r = 0;
+rms_high_out_l = 0;
+rms_high_out_r = 0;
+rms_hold_count_l = 0;
+rms_hold_count_r = 0;
 peak_out_l = 0;
 peak_out_r = 0;
 peak_hold_count_l = 0;
@@ -200,6 +206,31 @@ peak_in_r >= peak_out_r ? (
     );
 );
 
+rms_high_in_l = lufs_mode ? sqrt(max(rms_acc_l + rms_acc_r, EPS)) : rms_out_l;
+rms_high_in_r = lufs_mode ? rms_high_in_l : rms_out_r;
+
+rms_high_in_l >= rms_high_out_l ? (
+    rms_high_out_l = rms_high_in_l;
+    rms_hold_count_l = 0;
+) : (
+    rms_hold_count_l += 1;
+    rms_hold_count_l > peak_hold_samples ? (
+        rms_decay_tc_l = rms_high_out_l <= tail_thresh ? tail_decay_tc : peak_decay_tc;
+        rms_high_out_l = max(rms_high_in_l, rms_high_out_l * rms_decay_tc_l);
+    );
+);
+
+rms_high_in_r >= rms_high_out_r ? (
+    rms_high_out_r = rms_high_in_r;
+    rms_hold_count_r = 0;
+) : (
+    rms_hold_count_r += 1;
+    rms_hold_count_r > peak_hold_samples ? (
+        rms_decay_tc_r = rms_high_out_r <= tail_thresh ? tail_decay_tc : peak_decay_tc;
+        rms_high_out_r = max(rms_high_in_r, rms_high_out_r * rms_decay_tc_r);
+    );
+);
+
 //------------------------------------------------
 // Graphics
 //------------------------------------------------
@@ -222,6 +253,8 @@ k_ref =
 // ----- dB -----
 rms_db_l  = 20 * log10(rms_out_l);
 rms_db_r  = 20 * log10(rms_out_r);
+rms_high_db_l = 20 * log10(max(rms_high_out_l, EPS));
+rms_high_db_r = 20 * log10(max(rms_high_out_r, EPS));
 peak_db_l = 20 * log10(peak_out_l);
 peak_db_r = 20 * log10(peak_out_r);
 
@@ -231,14 +264,20 @@ lufs_mode ? (
     lufs_stereo_db = -0.691 + 10 * log10(lufs_sum);
     rms_db_l = lufs_stereo_db;
     rms_db_r = lufs_stereo_db;
+    rms_high_db_l = -0.691 + 20 * log10(max(rms_high_out_l, EPS));
+    rms_high_db_r = -0.691 + 20 * log10(max(rms_high_out_r, EPS));
 ) : (
     rms_db_l += 3;
     rms_db_r += 3;
+    rms_high_db_l += 3;
+    rms_high_db_r += 3;
 );
 
 // ----- K mapping -----
 rms_k_l  = non_k_mode ? rms_db_l  : (rms_db_l  + k_ref);
 rms_k_r  = non_k_mode ? rms_db_r  : (rms_db_r  + k_ref);
+rms_high_k_l = non_k_mode ? rms_high_db_l : (rms_high_db_l + k_ref);
+rms_high_k_r = non_k_mode ? rms_high_db_r : (rms_high_db_r + k_ref);
 peak_k_l = non_k_mode ? peak_db_l : (peak_db_l + k_ref);
 peak_k_r = non_k_mode ? peak_db_r : (peak_db_r + k_ref);
 
@@ -251,11 +290,15 @@ thresh_red = max(slider10, thresh_yellow + 0.001);
 
 rms_n_l  = (rms_k_l  - scale_min) / scale_span;
 rms_n_r  = (rms_k_r  - scale_min) / scale_span;
+rms_high_n_l = (rms_high_k_l - scale_min) / scale_span;
+rms_high_n_r = (rms_high_k_r - scale_min) / scale_span;
 peak_n_l = (peak_k_l - scale_min) / scale_span;
 peak_n_r = (peak_k_r - scale_min) / scale_span;
 
 rms_n_l  = min(max(rms_n_l,  0), 1);
 rms_n_r  = min(max(rms_n_r, 0), 1);
+rms_high_n_l = min(max(rms_high_n_l, 0), 1);
+rms_high_n_r = min(max(rms_high_n_r, 0), 1);
 peak_n_l = min(max(peak_n_l, 0), 1);
 peak_n_r = min(max(peak_n_r, 0), 1);
 
@@ -322,27 +365,41 @@ non_k_mode ? (
     );
 );
 
+// ----- RMS high lines (L/R) -----
+slider12 > 0 ? (
+    rms_high_y_l = floor(meter_bottom - (meter_h * rms_high_n_l) + 0.5) + 0.5;
+    rms_high_y_r = floor(meter_bottom - (meter_h * rms_high_n_r) + 0.5) + 0.5;
+
+    gfx_set(0.56, 0.66, 0.82, vis_alpha_l);
+    gfx_line(meter_left, rms_high_y_l, meter_mid, rms_high_y_l);
+
+    gfx_set(0.56, 0.66, 0.82, vis_alpha_r);
+    gfx_line(meter_mid, rms_high_y_r, meter_right, rms_high_y_r);
+);
+
 // ----- Peak lines (L/R) -----
-peak_y_l = floor(meter_bottom - (meter_h * peak_n_l) + 0.5) + 0.5;
-peak_y_r = floor(meter_bottom - (meter_h * peak_n_r) + 0.5) + 0.5;
+slider11 > 0 ? (
+    peak_y_l = floor(meter_bottom - (meter_h * peak_n_l) + 0.5) + 0.5;
+    peak_y_r = floor(meter_bottom - (meter_h * peak_n_r) + 0.5) + 0.5;
 
-non_k_mode ?
-    gfx_set(1.00, 0.90, 0.25, vis_alpha_l) :
-peak_k_l >= thresh_red ?
-    gfx_set(1, 0.3, 0.3, vis_alpha_l) :
-peak_k_l >= thresh_yellow ?
-    gfx_set(1, 1, 0.3, vis_alpha_l) :
-    gfx_set(0.25, 0.85, 0.25, vis_alpha_l);
-gfx_line(meter_left, peak_y_l, meter_mid, peak_y_l);
+    non_k_mode ?
+        gfx_set(1.00, 0.90, 0.25, vis_alpha_l) :
+    peak_k_l >= thresh_red ?
+        gfx_set(1, 0.3, 0.3, vis_alpha_l) :
+    peak_k_l >= thresh_yellow ?
+        gfx_set(1, 1, 0.3, vis_alpha_l) :
+        gfx_set(0.25, 0.85, 0.25, vis_alpha_l);
+    gfx_line(meter_left, peak_y_l, meter_mid, peak_y_l);
 
-non_k_mode ?
-    gfx_set(1.00, 0.90, 0.25, vis_alpha_r) :
-peak_k_r >= thresh_red ?
-    gfx_set(1, 0.3, 0.3, vis_alpha_r) :
-peak_k_r >= thresh_yellow ?
-    gfx_set(1, 1, 0.3, vis_alpha_r) :
-    gfx_set(0.25, 0.85, 0.25, vis_alpha_r);
-gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
+    non_k_mode ?
+        gfx_set(1.00, 0.90, 0.25, vis_alpha_r) :
+    peak_k_r >= thresh_red ?
+        gfx_set(1, 0.3, 0.3, vis_alpha_r) :
+    peak_k_r >= thresh_yellow ?
+        gfx_set(1, 1, 0.3, vis_alpha_r) :
+        gfx_set(0.25, 0.85, 0.25, vis_alpha_r);
+    gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
+);
 
 //------------------------------------------------
 // Scale: user-defined dB increments
