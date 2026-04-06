@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.12
+version: 1.13
 about: A simple K meter JSFX
-changelog: - centered readout values
+changelog: - now numbering also obeys the divison parameter
 options:no_meter
 
 
@@ -349,7 +349,6 @@ gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
 //------------------------------------------------
 steps = floor(scale_span / scale_step);
 i = 0;
-label_every = max(1, floor((6 / scale_step) + 0.5));
 top_tick_needed = abs((scale_min + steps * scale_step) - scale_max) > 0.001;
 
 loop(steps + 1,
@@ -375,23 +374,20 @@ loop(steps + 1,
     fill_hit_l ? gfx_line(meter_left, y, meter_mid, y);
     fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
 
-    // label near every 6 dB
-    (i % label_every == 0) ? (
-        sprintf(#scale_lbl, "%+d", k_val);
-        gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
-        non_k_mode ? (
-            gfx_set(0.85, 0.85, 0.85, 0.85);
-        ) : (
-            k_val >= thresh_red ?
-                gfx_set(1, 0.3, 0.3, 0.95) :
-            k_val >= thresh_yellow ?
-                gfx_set(1, 1, 0.3, 0.95) :
-                gfx_set(0.25, 0.85, 0.25, 0.95);
-        );
-        gfx_x = 2;
-        gfx_y = y_pix - scale_lbl_h + 1;
-        gfx_printf(#scale_lbl);
+    sprintf(#scale_lbl, "%+d", k_val);
+    gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
+    non_k_mode ? (
+        gfx_set(0.85, 0.85, 0.85, 0.85);
+    ) : (
+        k_val >= thresh_red ?
+            gfx_set(1, 0.3, 0.3, 0.95) :
+        k_val >= thresh_yellow ?
+            gfx_set(1, 1, 0.3, 0.95) :
+            gfx_set(0.25, 0.85, 0.25, 0.95);
     );
+    gfx_x = 2;
+    gfx_y = y_pix - scale_lbl_h + 1;
+    gfx_printf(#scale_lbl);
 
     i += 1;
 ));
