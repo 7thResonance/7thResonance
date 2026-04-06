@@ -1,8 +1,9 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.14
+version: 1.15
 about: A simple K meter JSFX
-changelog: - added RMS and Peak hold line switches.
+changelog:  - revised metering text.
+            - added crest factor/dyanmics metering
 options:no_meter
 
 
@@ -14,13 +15,14 @@ slider2:300<100,2000,50>RMS Integration (ms)
 slider3:600<50,5000,50>Peak Falloff (ms)
 slider4:300<0,5000,50>Peak Hold (ms)
 slider5:1<0,1,1{Off,On}>Show Readouts
-slider6:-18<-120,0,1>Scale Min (K)
-slider7:18<-48,48,1>Scale Max (K)
+slider6:-30<-120,0,1>Scale Min (K)
+slider7:6<-48,48,1>Scale Max (K)
 slider8:3<1,12,1>Scale Step (dB)
-slider9:0<-120,48,1>Yellow Starts At (K)
-slider10:4<-120,48,1>Red Starts At (K)
+slider9:-6<-120,48,1>Yellow Starts At (K)
+slider10:0<-120,48,1>Red Starts At (K)
 slider11:1<0,1,1{Off,On}>Show Peak High Line
 slider12:1<0,1,1{Off,On}>Show RMS High Line
+slider13:1<0,1,1{Off,On}>Show Crest/Dynamics
 
 //------------------------------------------------
 // Constants
@@ -32,8 +34,12 @@ EPS = 1e-6;
 //------------------------------------------------
 rms_acc_l = 0;
 rms_acc_r = 0;
+lufs_m_acc_l = 0;
+lufs_m_acc_r = 0;
 rms_out_l = 0;
 rms_out_r = 0;
+crest_out_l = 0;
+crest_out_r = 0;
 rms_high_out_l = 0;
 rms_high_out_r = 0;
 rms_hold_count_l = 0;
@@ -113,6 +119,9 @@ srate != last_sr ? (
     f2b2 = 1;
     f1p1_l = f1p2_l = f2p1_l = f2p2_l = 0;
     f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
+    lufs_m_acc_l = 0;
+    lufs_m_acc_r = 0;
+    crest_out_l = crest_out_r = 0;
 );
 
 //------------------------------------------------
@@ -163,6 +172,15 @@ rms_out_l = sqrt(max(rms_acc_l, EPS));
 rms_acc_r = rms_tc * rms_acc_r + (1 - rms_tc) * (rms_in_r * rms_in_r);
 rms_out_r = sqrt(max(rms_acc_r, EPS));
 
+lufs_mode ? (
+    lufs_m_tc = exp(-1 / (0.4 * srate));
+    lufs_m_acc_l = lufs_m_tc * lufs_m_acc_l + (1 - lufs_m_tc) * (rms_in_l * rms_in_l);
+    lufs_m_acc_r = lufs_m_tc * lufs_m_acc_r + (1 - lufs_m_tc) * (rms_in_r * rms_in_r);
+) : (
+    lufs_m_acc_l = 0;
+    lufs_m_acc_r = 0;
+);
+
 // Peak with two-stage falloff:
 // slider-controlled above -120 dBFS, accelerated below -120 dBFS
 peak_falloff_s = max(slider3, 1) * 0.001;
@@ -206,6 +224,23 @@ peak_in_r >= peak_out_r ? (
     );
 );
 
+crest_ref_l = lufs_mode ? (-0.691 + 10 * log10(max(lufs_m_acc_l + lufs_m_acc_r, EPS))) : (20 * log10(max(rms_out_l, EPS)));
+crest_ref_r = lufs_mode ? crest_ref_l : (20 * log10(max(rms_out_r, EPS)));
+crest_in_l = max(20 * log10(max(peak_in_l, EPS)) - crest_ref_l, 0);
+crest_in_r = max(20 * log10(max(peak_in_r, EPS)) - crest_ref_r, 0);
+
+crest_in_l >= crest_out_l ? (
+    crest_out_l = crest_in_l;
+) : (
+    crest_out_l = max(crest_in_l, crest_out_l * peak_decay_tc);
+);
+
+crest_in_r >= crest_out_r ? (
+    crest_out_r = crest_in_r;
+) : (
+    crest_out_r = max(crest_in_r, crest_out_r * peak_decay_tc);
+);
+
 rms_high_in_l = lufs_mode ? sqrt(max(rms_acc_l + rms_acc_r, EPS)) : rms_out_l;
 rms_high_in_r = lufs_mode ? rms_high_in_l : rms_out_r;
 
@@ -238,6 +273,26 @@ rms_high_in_r >= rms_high_out_r ? (
 small_mode = gfx_w<200*gfx_ext_retina || gfx_h<150*gfx_ext_retina;
 gfx_ext_retina>1 ? gfx_setfont(1,"Arial",16*gfx_ext_retina,'b') : gfx_setfont(0);
 
+function draw_outlined_text(str, x, y, a)
+  local(outline_a)
+  globals(gfx_x, gfx_y)
+(
+  outline_a = a * 0.95;
+  gfx_set(0,0,0,outline_a);
+  gfx_x = x - 1; gfx_y = y;     gfx_drawstr(str);
+  gfx_x = x + 1; gfx_y = y;     gfx_drawstr(str);
+  gfx_x = x;     gfx_y = y - 1; gfx_drawstr(str);
+  gfx_x = x;     gfx_y = y + 1; gfx_drawstr(str);
+  gfx_x = x - 1; gfx_y = y - 1; gfx_drawstr(str);
+  gfx_x = x + 1; gfx_y = y - 1; gfx_drawstr(str);
+  gfx_x = x - 1; gfx_y = y + 1; gfx_drawstr(str);
+  gfx_x = x + 1; gfx_y = y + 1; gfx_drawstr(str);
+  gfx_set(1,1,1,a);
+  gfx_x = x;
+  gfx_y = y;
+  gfx_drawstr(str);
+);
+
 // ----- K reference -----
 normal_mode = slider1 == 3;
 lufs_m_mode = slider1 == 4;
@@ -251,17 +306,21 @@ k_ref =
                    0;
 
 // ----- dB -----
-rms_db_l  = 20 * log10(rms_out_l);
-rms_db_r  = 20 * log10(rms_out_r);
+rms_db_l  = 20 * log10(max(rms_out_l, EPS));
+rms_db_r  = 20 * log10(max(rms_out_r, EPS));
 rms_high_db_l = 20 * log10(max(rms_high_out_l, EPS));
 rms_high_db_r = 20 * log10(max(rms_high_out_r, EPS));
-peak_db_l = 20 * log10(peak_out_l);
-peak_db_r = 20 * log10(peak_out_r);
+peak_db_l = 20 * log10(max(peak_out_l, EPS));
+peak_db_r = 20 * log10(max(peak_out_r, EPS));
+rms_db_raw_l = rms_db_l;
+rms_db_raw_r = rms_db_r;
+lufs_momentary_db = 0;
 
 lufs_mode ? (
     // BS.1770 stereo loudness uses summed weighted channel energies.
     lufs_sum = max(rms_acc_l + rms_acc_r, EPS);
     lufs_stereo_db = -0.691 + 10 * log10(lufs_sum);
+    lufs_momentary_db = -0.691 + 10 * log10(max(lufs_m_acc_l + lufs_m_acc_r, EPS));
     rms_db_l = lufs_stereo_db;
     rms_db_r = lufs_stereo_db;
     rms_high_db_l = -0.691 + 20 * log10(max(rms_high_out_l, EPS));
@@ -272,6 +331,11 @@ lufs_mode ? (
     rms_high_db_l += 3;
     rms_high_db_r += 3;
 );
+
+crest_db_l = crest_out_l;
+crest_db_r = crest_out_r;
+crest_readout_db_l = max(peak_db_l - (lufs_mode ? lufs_momentary_db : rms_db_l), 0);
+crest_readout_db_r = max(peak_db_r - (lufs_mode ? lufs_momentary_db : rms_db_r), 0);
 
 // ----- K mapping -----
 rms_k_l  = non_k_mode ? rms_db_l  : (rms_db_l  + k_ref);
@@ -306,12 +370,16 @@ peak_n_r = min(max(peak_n_r, 0), 1);
 pad = 18;
 meter_h = gfx_h - pad*2;
 meter_w = gfx_w - pad*2;
+meter_top = pad;
 meter_bottom = gfx_h - pad;
 bar_w = meter_w / 2;
 meter_left = pad;
 meter_mid = pad + bar_w;
 meter_right = pad + meter_w;
 meter_w_line = meter_w - 1;
+crest_bar_w = max(floor(bar_w * 0.4 + 0.5), 2);
+crest_bar_l_x = floor(meter_left + (bar_w - crest_bar_w) * 0.5 + 0.5);
+crest_bar_r_x = floor(meter_mid + (bar_w - crest_bar_w) * 0.5 + 0.5);
 
 // ----- RMS bars -----
 thresh_yellow_n = (thresh_yellow - scale_min) / scale_span;
@@ -362,6 +430,32 @@ non_k_mode ? (
     rms_n_r > thresh_red_n ? (
         gfx_set(1, 0.3, 0.3, 1); // red
         gfx_rect(meter_mid, red_y_r, bar_w, yellow_y_r - red_y_r);
+    );
+);
+
+// ----- Crest / Dynamics top bars -----
+slider13 > 0 ? (
+    crest_track_w = max(crest_bar_w - 2, 1);
+    crest_draw_db_l = min(max(crest_db_l, 0), scale_span);
+    crest_draw_db_r = min(max(crest_db_r, 0), scale_span);
+    crest_zero_visible = scale_min <= 0 && scale_max >= 0;
+    crest_anchor_y =
+        crest_zero_visible ?
+            floor(meter_bottom - (meter_h * ((0 - scale_min) / scale_span)) + 0.5) + 1 :
+            meter_top + 1;
+    crest_max_h = max(meter_bottom - crest_anchor_y, 0);
+    crest_px_per_db = meter_h / scale_span;
+    crest_fill_l = min(floor(crest_draw_db_l * crest_px_per_db + 0.5), crest_max_h);
+    crest_fill_r = min(floor(crest_draw_db_r * crest_px_per_db + 0.5), crest_max_h);
+
+    crest_fill_l > 0 ? (
+        gfx_set(0.72, 0.80, 0.92, vis_alpha_l * 0.9);
+        gfx_rect(crest_bar_l_x + 1, crest_anchor_y, crest_track_w, crest_fill_l);
+    );
+
+    crest_fill_r > 0 ? (
+        gfx_set(0.72, 0.80, 0.92, vis_alpha_r * 0.9);
+        gfx_rect(crest_bar_r_x + 1, crest_anchor_y, crest_track_w, crest_fill_r);
     );
 );
 
@@ -431,20 +525,13 @@ loop(steps + 1,
     fill_hit_l ? gfx_line(meter_left, y, meter_mid, y);
     fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
 
-    sprintf(#scale_lbl, "%+d", k_val);
-    gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
-    non_k_mode ? (
-        gfx_set(0.85, 0.85, 0.85, 0.85);
-    ) : (
-        k_val >= thresh_red ?
-            gfx_set(1, 0.3, 0.3, 0.95) :
-        k_val >= thresh_yellow ?
-            gfx_set(1, 1, 0.3, 0.95) :
-            gfx_set(0.25, 0.85, 0.25, 0.95);
+    !(slider5 > 0 && i == 0) ? (
+        sprintf(#scale_lbl, "%+d", k_val);
+        gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
+        scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
+        scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
+        draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
     );
-    gfx_x = 2;
-    gfx_y = y_pix - scale_lbl_h + 1;
-    gfx_printf(#scale_lbl);
 
     i += 1;
 ));
@@ -472,18 +559,9 @@ top_tick_needed ? (
     fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
     sprintf(#scale_lbl, "%+d", k_val);
     gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
-    non_k_mode ? (
-        gfx_set(0.85, 0.85, 0.85, 0.85);
-    ) : (
-        k_val >= thresh_red ?
-            gfx_set(1, 0.3, 0.3, 0.95) :
-        k_val >= thresh_yellow ?
-            gfx_set(1, 1, 0.3, 0.95) :
-            gfx_set(0.25, 0.85, 0.25, 0.95);
-    );
-    gfx_x = 2;
-    gfx_y = y_pix - scale_lbl_h + 1;
-    gfx_printf(#scale_lbl);
+    scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
+    scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
+    draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
 );
 
 //------------------------------------------------
@@ -546,30 +624,43 @@ slider5 > 0 ? (
     rms_left_limit = rms_lbl_x - readout_gap;
     rms_right_x = rms_lbl_x + rm_lbl_w;
 
-    y_peak = floor(meter_bottom - pk_l_h * 2 - 2 + 0.5);
-    y_rms  = floor(meter_bottom - rm_l_h - 1 + 0.5);
+    line_gap = 1;
+    line_h = max(pk_lbl_h, rm_lbl_h);
+    line_h = max(line_h, max(pk_l_h, pk_r_h));
+    line_h = max(line_h, max(rm_l_h, rm_r_h));
 
-    gfx_set(1,1,1,text_alpha);
+    total_lines = 2;
+    total_readout_h = total_lines * line_h + (total_lines - 1) * line_gap;
+    y_peak = floor(meter_bottom - total_readout_h + 1 + 0.5);
+    y_rms  = y_peak + line_h + line_gap;
+    strcpy(#pk_lbl_text, "P ");
 
     // Left peak  P  Right peak
-    gfx_x = peak_left_limit - pk_l_w;
-    gfx_y = y_peak;
-    gfx_printf(#pk_l);
-    gfx_x = peak_lbl_x;
-    gfx_y = y_peak;
-    gfx_printf("P ");
-    gfx_x = peak_right_x;
-    gfx_y = y_peak;
-    gfx_printf(#pk_r);
+    draw_outlined_text(#pk_l, peak_left_limit - pk_l_w, y_peak, text_alpha);
+    draw_outlined_text(#pk_lbl_text, peak_lbl_x, y_peak, text_alpha);
+    draw_outlined_text(#pk_r, peak_right_x, y_peak, text_alpha);
 
     // Left RMS  R/M/S  Right RMS
-    gfx_x = rms_left_limit - rm_l_w;
-    gfx_y = y_rms;
-    gfx_printf(#rm_l);
-    gfx_x = rms_lbl_x;
-    gfx_y = y_rms;
-    gfx_printf(#line2_lbl_draw);
-    gfx_x = rms_right_x;
-    gfx_y = y_rms;
-    gfx_printf(#rm_r);
+    draw_outlined_text(#rm_l, rms_left_limit - rm_l_w, y_rms, text_alpha);
+    draw_outlined_text(#line2_lbl_draw, rms_lbl_x, y_rms, text_alpha);
+    draw_outlined_text(#rm_r, rms_right_x, y_rms, text_alpha);
+
+    slider13 > 0 ? (
+        sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_readout_db_l);
+        sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_readout_db_r);
+        crest_text_alpha_l = 0.9 * (silence_l ? vis_alpha_l : 1);
+        crest_text_alpha_r = 0.9 * (silence_r ? vis_alpha_r : 1);
+        crest_text_y = meter_top + 2;
+        crest_center_l = meter_left + bar_w * 0.5;
+        crest_center_r = meter_mid + bar_w * 0.5;
+        crest_readout_font = readout_font + 1;
+
+        gfx_setfont(2,"Arial",crest_readout_font);
+
+        gfx_measurestr(#crest_top_l, crest_top_l_w, crest_top_l_h);
+        draw_outlined_text(#crest_top_l, crest_center_l - crest_top_l_w * 0.5, crest_text_y, crest_text_alpha_l);
+
+        gfx_measurestr(#crest_top_r, crest_top_r_w, crest_top_r_h);
+        draw_outlined_text(#crest_top_r, crest_center_r - crest_top_r_w * 0.5, crest_text_y, crest_text_alpha_r);
+    );
 );
