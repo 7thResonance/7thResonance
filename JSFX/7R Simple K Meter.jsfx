@@ -4,6 +4,7 @@ version: 1.15
 about: A simple K meter JSFX
 changelog:  - revised metering text.
             - added crest factor/dyanmics metering
+            - Changed defaults
 options:no_meter
 
 
