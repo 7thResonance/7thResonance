@@ -1,9 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.16
+version: 1.17
 about: A simple K meter JSFX
-changelog:  - revised metering accuracy
-            - Added mouse hover value read out
+changelog:  - slowed down crest factor read out value
 options:no_meter
 
 
@@ -42,6 +41,8 @@ rms_out_l = 0;
 rms_out_r = 0;
 crest_out_l = 0;
 crest_out_r = 0;
+crest_readout_l = 0;
+crest_readout_r = 0;
 rms_high_out_l = 0;
 rms_high_out_r = 0;
 rms_hold_count_l = 0;
@@ -50,6 +51,8 @@ peak_out_l = 0;
 peak_out_r = 0;
 peak_hold_count_l = 0;
 peak_hold_count_r = 0;
+crest_hold_count_l = 0;
+crest_hold_count_r = 0;
 silence_l = 0;
 silence_r = 0;
 silence_count_l = 0;
@@ -126,6 +129,9 @@ srate != last_sr ? (
     lufs_s_acc_l = 0;
     lufs_s_acc_r = 0;
     crest_out_l = crest_out_r = 0;
+    crest_readout_l = crest_readout_r = 0;
+    crest_hold_count_l = 0;
+    crest_hold_count_r = 0;
 );
 
 //------------------------------------------------
@@ -252,6 +258,26 @@ crest_in_r >= crest_out_r ? (
     crest_out_r = crest_in_r;
 ) : (
     crest_out_r = max(crest_in_r, crest_out_r * peak_decay_tc);
+);
+
+crest_in_l >= crest_readout_l ? (
+    crest_readout_l = crest_in_l;
+    crest_hold_count_l = 0;
+) : (
+    crest_hold_count_l += 1;
+    crest_hold_count_l > peak_hold_samples ? (
+        crest_readout_l = max(crest_in_l, crest_readout_l * peak_decay_tc);
+    );
+);
+
+crest_in_r >= crest_readout_r ? (
+    crest_readout_r = crest_in_r;
+    crest_hold_count_r = 0;
+) : (
+    crest_hold_count_r += 1;
+    crest_hold_count_r > peak_hold_samples ? (
+        crest_readout_r = max(crest_in_r, crest_readout_r * peak_decay_tc);
+    );
 );
 
 rms_high_in_l = lufs_mode ? sqrt(max(rms_acc_l + rms_acc_r, EPS)) : rms_out_l;
@@ -661,8 +687,8 @@ slider5 > 0 ? (
     draw_outlined_text(#rm_r, rms_right_x, y_rms, text_alpha);
 
     slider13 > 0 ? (
-        sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_out_l);
-        sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_out_r);
+        sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_readout_l);
+        sprintf(#crest_top_r, "%.1f", silence_r ? 0 : crest_readout_r);
         crest_text_alpha_l = 0.9 * (silence_l ? vis_alpha_l : 1);
         crest_text_alpha_r = 0.9 * (silence_r ? vis_alpha_r : 1);
         crest_text_y = meter_top + 2;
