@@ -1,8 +1,8 @@
 --[[
-@description 7R Control Send volume of Selected Track
+@description 7R Control Send volume of Selected Track [Deprecated]
 @author 7thResonance
-@version 1.4
-@changelog Mirrors mute states.
+@version 1.5
+@changelog Deprecated, use the extention version.
 @about When mulltiple tracks are selected, can change the relative volume of the send over those tracks.
 
     due to my lack of knowledge, or limitation of API (i wouldnt know lmao) 

@@ -1,8 +1,8 @@
 --[[
-@description 7R FX Link (Relative)
+@description 7R FX Link (Relative) [Deprecated]
 @author 7thResonance
-@version 1.03
-@changelog - fixed error when selecting media item.
+@version 1.04
+@changelog - Deprecated
 @about Links the same FX on selected track.
 
 Original script by zaibuyidao.
