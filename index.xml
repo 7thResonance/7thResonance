@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="20d64c360b538139bd465800c1d04db497bf92ca">
+<index version="1" name="7thResonance" commit="759ef6442cc8c823d897c8d924c0425e0dc35a1a">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -197,7 +197,7 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
     </reapack>
   </category>
   <category name="Track">
-    <reapack name="7R Control Sends of Selected Track.lua" type="script" desc="7R Control Send volume of Selected Track">
+    <reapack name="7R Control Sends of Selected Track.lua" type="script" desc="7R Control Send volume of Selected Track [Deprecated]">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
@@ -229,6 +229,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.4" author="7thResonance" time="2026-02-10T11:32:24Z">
         <changelog><![CDATA[Mirrors mute states.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/bb5298ce2e4b4cf3510c318819ba185f09e28f3f/Track/7R%20Control%20Sends%20of%20Selected%20Track.lua</source>
+      </version>
+      <version name="1.5" author="7thResonance" time="2026-04-08T19:14:58Z">
+        <changelog><![CDATA[Deprecated, use the extention version.]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/759ef6442cc8c823d897c8d924c0425e0dc35a1a/Track/7R%20Control%20Sends%20of%20Selected%20Track.lua</source>
       </version>
     </reapack>
     <reapack name="7R Freeze Instruments to Stereo (Other FX Online).lua" type="script" desc="7R Freeze Instruments to Stereo (Other FX Online)">
@@ -316,7 +320,7 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/0a23833a5e700221e622ffe4e54f9581df92790b/Utilities/7R%20Chord%20Item%20Recorder.lua</source>
       </version>
     </reapack>
-    <reapack name="7R FX Link (Relative).lua" type="script" desc="7R FX Link (Relative)">
+    <reapack name="7R FX Link (Relative).lua" type="script" desc="7R FX Link (Relative) [Deprecated]">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
@@ -341,6 +345,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.03" author="7thResonance" time="2025-11-17T12:02:35Z">
         <changelog><![CDATA[- fixed error when selecting media item.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/0652ed1c0d3b63214a3f8cea0ddbe82b0c51332b/Utilities/7R%20FX%20Link%20(Relative).lua</source>
+      </version>
+      <version name="1.04" author="7thResonance" time="2026-04-08T19:14:58Z">
+        <changelog><![CDATA[- Deprecated]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/759ef6442cc8c823d897c8d924c0425e0dc35a1a/Utilities/7R%20FX%20Link%20(Relative).lua</source>
       </version>
     </reapack>
     <reapack name="7R FX Send Manager.lua" type="script" desc="7R FX Send Manager">
