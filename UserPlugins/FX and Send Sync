@@ -1,0 +1,11 @@
+--[[
+desc: 7R FX and Send Realtive Sync
+author:7thResonance
+version: 0.1
+about: FX and Send Sync - Activacte by toggle in Action menu. 
+        7R FX and Send Sync: Toggle FX Sync, 7R FX and Send Sync: Toggle Send Sync
+        Better accuracy over the script version
+        better automation support for FX (excpt touch mode)
+        Send doesnt support automation. only trim read/mode
+@provides [extension] UserPlugins\reaper_7R_FX_and_Send_Sync.dll
+--]]
