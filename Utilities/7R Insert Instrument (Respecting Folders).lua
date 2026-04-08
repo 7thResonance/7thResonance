@@ -1,9 +1,9 @@
 --[[
-@description 7R Insert Instrument (Respecting Folders)
+@description 7R Insert Instrument (Respecting Folders)[Deprecated]
 @author 7thResonance
-@version 1.5
+@version 1.6
 @changelog
-     - single click inserts stuff
+     - Deprecated, use the Insert FX Script.
 @about Original Folder Respect logic is by Aaron Cendan (Insert New Track Respect Folders)
   Uses that logic to insert instrument at the start,middle, or end of folders.
   If no folder or track is selected, inserts at end of tracks

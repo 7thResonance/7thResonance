@@ -1,12 +1,12 @@
 --[[
-@description 7R Track Template Inserter (GUI)
+@description 7R Track Template Inserter (GUI) [Deprecated]
 @author 7thResonance
-@version 1.4
+@version 1.5
 @about
   Browse and insert REAPER track templates organized in a tree structure
   matching the folder hierarchy in the TrackTemplates directory.
   Double-click to insert track templates into the current project.
-@changelog - Single click adds stuff
+@changelog - Deprecated, use the Insert FX Script.
 @screenshot Window https://i.postimg.cc/Y25QbqXX/Screenshot-2025-07-12-213753.png
 --]]
 
