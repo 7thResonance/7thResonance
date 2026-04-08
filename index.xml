@@ -827,12 +827,20 @@ Doesnt create send if folder.]]></changelog>
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert FX based on selection - Open add FX window based on the mouse cursor postition (Track, Item, Master)\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert Instrument based on track Selection - GUI to add instruments (Respects Folders)\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Insert Track Templates - GUI to add template tracks\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Control Sends of Selected Track - Allows controlling send volume of many tracks at once\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Marker Exporter - GUI to export Project/Take Markers and Regions.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 FX Link - Links selected Track's Focused FX (relative)\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 FX and Send Link - Links selected Track's FX (relative) and Sends [Extention]\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 FX send Manager - quickly mark tracks as FX tracks and create sends to them.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Project Broswer\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Project Version Manager\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Project Time Tracker - Simple project time tracker\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 FX send manager\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Keyswitch manager - modded reaks\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Oscilloscope - modded with cycle detection\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 K Meter - simple K mater for live metering\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Spectrum Analyser - modded with weighted curves, mid side\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Chord item recorder - directly record chords from rec arm track to chord track\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Split item(s) under mouse cursor (group + multiselect, ignore snap, no change in selection)\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Split MIDI item by Pitch (Copy all CC)\par}
 }
 ]]></description>
   </metadata>
