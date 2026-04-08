@@ -29,14 +29,32 @@ Insert Instrument based on track Selection - GUI to add instruments (Respects Fo
 
 Insert Track Templates - GUI to add template tracks
 
-Control Sends of Selected Track - Allows controlling send volume of many tracks at once
-
 Marker Exporter - GUI to export Project/Take Markers and Regions.
 
-FX Link - Links selected Track's Focused FX (relative)
+FX and Send Link - Links selected Track's FX (relative) and Sends [Extention]
+
+FX send Manager - quickly mark tracks as FX tracks and create sends to them.
 
 Project Broswer
 
 Project Version Manager
 
+Project Time Tracker - Simple project time tracker
+
 FX send manager
+
+Keyswitch manager - modded reaks
+
+Oscilloscope - modded with cycle detection
+
+K Meter - simple K mater for live metering
+
+Spectrum Analyser - modded with weighted curves, mid side
+
+Chord item recorder - directly record chords from rec arm track to chord track
+
+Split item(s) under mouse cursor (group + multiselect, ignore snap, no change in selection)
+
+Split MIDI item by Pitch (Copy all CC)
+
+
