@@ -1,12 +1,12 @@
 --[[
 @description 7R FX and Send Realtive Sync
 @author 7thResonance
-@version 0.2
+@version 0.3
 @provides [extension] reaper_7R_FX_and_Send_Sync.dll
 @about FX and Send Sync - Activacte by toggle in Action menu. 
         7R FX and Send Sync: Toggle FX Sync, 7R FX and Send Sync: Toggle Send Sync
         Better accuracy over the script version
         better automation support for FX (excpt touch mode)
         Send doesnt support automation. only trim read/mode
-@changelog - Improved accuracy.
+@changelog - Sync sends with destination rather than slot. (there are some known bugs related to slots, dont know how to fix this for now)
 --]]
