@@ -1,13 +1,16 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.6
+version: 1.7
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: normalisation now follows post smoothening
+changelog: normalise button fix
+        -  Freeze options
+        -  Spectrum time averaging
+        -  Mouse hover value readout
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -21,7 +24,7 @@ slider1:6<0,11,1{16,32,64,128,256,512,1024,2048,4096,8192,16384,32768}>-FFT size
 slider2:-120<-450,-12,6>-floor
 slider3:0<0,1,1{disabled,enabled}>-show phase
 slider4:2<0,3,1{rectangular,hamming,blackman-harris,blackman}>-window
-slider5:0<0,2500,1>-integration time (ms)
+slider5:0<0,20000,1>-integration time (ms)
 slider6:0<0,12,0.1>-slope (dB/octave)
 slider7:1000<10,10000,1>-octave gain center (Hz)
 slider8:0<0,1,1{original,mid/side}>-show mid/side
@@ -50,6 +53,7 @@ old_itu = 0;
 // NEW: UI button objects for RMS and Normalise (fix: clickable)
 rms_button = 0;          // NEW
 normalize_button = 0;    // NEW
+freeze_button = 0;
 
 // New: limit RMS history frames to a safe number to avoid JSFX memory overflow
 max_rms_frames = 50; // Increased from 20 for better averaging
@@ -65,6 +69,11 @@ norm_offset_hold = 0;    // latched offset used when peak drops below threshold 
 norm_smooth = 1;      // smoothing coefficient (tweak to taste)
 old_norm = 0;            // track slider12 changes
 old_smoothmode = 0;
+avg_is_infinite = 0;
+avg_infinite_frames = 0;
+freeze_spectrum = 0;
+has_spectrum_data = 0;
+old_slider5 = slider5;
 
 // --- Memory layout (safe, minimal) ---
 // keep original history size calculation (works and keeps recpos simple)
@@ -106,6 +115,8 @@ itu_z_r1_u2 = itu_z_r1_u1 + 1;
 itu_z_r2_u1 = itu_z_r1_u2 + 1;
 itu_z_r2_u2 = itu_z_r2_u1 + 1;
 smooth_prefix = itu_z_r2_u2 + 1;
+display_main_db = smooth_prefix + (max_fft_size * 0.5 + 1);
+display_side_db = display_main_db + (max_fft_size * 0.5);
 
 // Hardcoded SOS coeffs (b0,b1,b2 | a0=1,a1,a2) for fs=48000
 // Section 0 (low-freq emphasis)
@@ -170,6 +181,17 @@ function get_octave_smoothing_width(mode)
   mode == 4 ? (1/2) :
   mode == 5 ? 1 :
   mode == 6 ? 2 :
+  0;
+);
+
+function get_spectrum_avg_ms(idx)
+(
+  idx == 0 ? 1000 :
+  idx == 1 ? 2000 :
+  idx == 2 ? 5000 :
+  idx == 3 ? 7000 :
+  idx == 4 ? 10000 :
+  idx == 5 ? 20000 :
   0;
 );
 
@@ -238,6 +260,13 @@ slider13 != old_smoothmode ? (
   old_smoothmode = slider13;
   integrate_en = 0;
 );
+slider5 != old_slider5 ? (
+  old_slider5 = slider5;
+  avg_is_infinite > 0.5 ? (
+    avg_is_infinite = 0;
+    avg_infinite_frames = 0;
+  );
+);
 
 @block
 
@@ -295,14 +324,16 @@ slider9 > 0.5 ? (
   filtered_r = spl1;
 );
 
-abs(recpos[]=filtered_l+filtered_r) > minvol ? update=1;
-// derived stream: Side = (L - R)
-derived = filtered_l - filtered_r;
-abs(recpos2[]=derived) > minvol ? update=1;
-// advance primary recpos (original buffer starts at 0)
-recpos = ((recpos+1) >= histsize ? 0 : (recpos+1));
-// advance derived recpos (buffer starts at recpos2_offset)
-recpos2 = ((recpos2+1) >= (recpos2_offset + histsize) ? recpos2_offset : (recpos2+1));
+freeze_spectrum < 0.5 ? (
+  abs(recpos[]=filtered_l+filtered_r) > minvol ? update=1;
+  // derived stream: Side = (L - R)
+  derived = filtered_l - filtered_r;
+  abs(recpos2[]=derived) > minvol ? update=1;
+  // advance primary recpos (original buffer starts at 0)
+  recpos = ((recpos+1) >= histsize ? 0 : (recpos+1));
+  // advance derived recpos (buffer starts at recpos2_offset)
+  recpos2 = ((recpos2+1) >= (recpos2_offset + histsize) ? recpos2_offset : (recpos2+1));
+);
 
 @gfx 640 400
 small_mode = gfx_w<200*gfx_ext_retina || gfx_h < 50*gfx_ext_retina;
@@ -369,27 +400,39 @@ function cycle_slider(x, y, z, dx)
 
 (mouse_cap & 1) ? (
    !(last_mouse_cap & 1) ? (
-       (cap_mode == 1||cap_mode == 4) && !cap_drag && cap_timer < 12 ? (
-         cap_mode == 1 ? (
-            slider2 = -120;
-            slider_automate(slider2);
-          ) : (
-            slider5 = 0;
-            slider_automate(slider5);
-          );
-         cap_mode=0;
-         old_w=0;
-       ) : (
+        (cap_mode == 1||cap_mode == 4) && !cap_drag && cap_timer < 12 ? (
+          cap_mode == 1 ? (
+             slider2 = -120;
+             slider_automate(slider2);
+           ) : (
+             slider5 = 0;
+             avg_is_infinite = 0;
+             avg_infinite_frames = 0;
+             slider_automate(slider5);
+           );
+          cap_mode=0;
+          old_w=0;
+        ) : (
          cap_mode = cap_drag = cap_timer = 0;
-         small_mode ? (
-          cap_last_x = mouse_x;
-          cap_last_y = mouse_y;
-          cap_mode=1; // floor
-         ) : phase_button.hit_button(mouse_x,mouse_y,-1) ? (
-           slider3=!slider3;
-           slider_automate(slider3);
+          small_mode ? (
+           cap_last_x = mouse_x;
+           cap_last_y = mouse_y;
+           cap_mode=1; // floor
+         ) : freeze_button.hit_button(mouse_x,mouse_y,-2) ? (
+           freeze_spectrum = !freeze_spectrum;
+           cap_mode = 0;
+           update = 1;
            old_w = 0;
-         ) : (
+          ) : normalize_button.hit_button(mouse_x,mouse_y,-3) ? (
+            slider12 = !slider12;
+            cap_mode = 0;
+            slider_automate(slider12);
+            old_w = 0;
+          ) : phase_button.hit_button(mouse_x,mouse_y,-1) ? (
+            slider3=!slider3;
+            slider_automate(slider3);
+            old_w = 0;
+          ) : (
            floor_button.hit_button(mouse_x,mouse_y,1)||
            window_button.hit_button(mouse_x,mouse_y,2)||
            fft_button.hit_button(mouse_x,mouse_y,3)||
@@ -414,7 +457,9 @@ function cycle_slider(x, y, z, dx)
       slider_automate(slider1);
     );
     cap_mode == 4 && cap_last_y != mouse_y ? (
-      slider5 = drag_slider_precise(slider5, 0.0, 2500.0, 5);
+      slider5 = drag_slider_precise(slider5, 0.0, 20000.0, 5);
+      avg_is_infinite = 0;
+      avg_infinite_frames = 0;
       old_w=0;
       slider_automate(slider5);
     );
@@ -470,6 +515,18 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     slider13==4?"!":"",
     slider13==5?"!":"",
     slider13==6?"!":"");
+
+  sprintf(#menustr,"%s|>Spectrum averaging|%s1 sec|%s2 sec|%s5 sec|%s7 sec|%s10 sec|%s20 sec|%sInfinite|<",
+    #menustr,
+    (avg_is_infinite<0.5 && abs(slider5-1000)<0.5)?"!":"",
+    (avg_is_infinite<0.5 && abs(slider5-2000)<0.5)?"!":"",
+    (avg_is_infinite<0.5 && abs(slider5-5000)<0.5)?"!":"",
+    (avg_is_infinite<0.5 && abs(slider5-7000)<0.5)?"!":"",
+    (avg_is_infinite<0.5 && abs(slider5-10000)<0.5)?"!":"",
+    (avg_is_infinite<0.5 && abs(slider5-20000)<0.5)?"!":"",
+    avg_is_infinite>0.5?"!":"");
+
+  sprintf(#menustr,"%s|%sFreeze spectrum",#menustr,freeze_spectrum>.5?"!":"");
   
   sprintf(#menustr,"%s|%sNormalise display",#menustr,slider12>.5?"!":""); // NEW: menu item
   
@@ -482,7 +539,21 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     (ret-=1) == 0 ? (slider9 = !slider9; old_w=0; slider_automate(slider9); ) :
     (ret-=1) == 0 ? (slider10 = !slider10; old_w=0; slider_automate(slider10); ) :
     (ret-=1) < 7 ? (slider13 = ret; old_w=0; integrate_en=0; slider_automate(slider13); ) :
-    (ret-=7) == 0 ? (slider12 = !slider12; old_w=0; slider_automate(slider12); ); // NEW: toggle normalise from menu
+    (ret-=7) < 7 ? (
+      ret == 6 ? (
+        avg_is_infinite = 1;
+        avg_infinite_frames = 0;
+      ) : (
+        avg_is_infinite = 0;
+        avg_infinite_frames = 0;
+        slider5 = get_spectrum_avg_ms(ret);
+        slider_automate(slider5);
+      );
+      integrate_en = 0;
+      old_w = 0;
+    ) :
+    (ret-=7) == 0 ? (freeze_spectrum = !freeze_spectrum; old_w=0; ) :
+    (ret-=1) == 0 ? (slider12 = !slider12; old_w=0; slider_automate(slider12); ); // NEW: toggle normalise from menu
     
   );
   update=1;
@@ -491,7 +562,7 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
 last_mouse_cap = mouse_cap;
 
 // only update if new fft data is there or if the size changed
-update || old_w != gfx_w || old_h!=gfx_h? (
+update || old_w != gfx_w || old_h!=gfx_h ? (
 
 old_w=gfx_w; old_h=gfx_h;
 
@@ -559,7 +630,10 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
     (slider4|0)==3 ? "blackman" :
     "rectangular"); 
   sprintf(#floorstr,"%s%.1fdB",gfx_w<420?"":"floor: ",slider2);
-  sprintf(#intstr,"%s: %dms",gfx_w<420 ? "int" : "integrate", slider5|0);
+  avg_is_infinite > 0.5 ?
+    sprintf(#intstr,"%s: inf",gfx_w<420 ? "avg" : "average")
+  :
+    sprintf(#intstr,"%s: %dms",gfx_w<420 ? "int" : "integrate", slider5|0);
   sprintf(#slopestr,"%s%.1fdB/oct",gfx_w<420?"":"slope: ",floor(slider6*10+0.5)/10);
   sprintf(#rmsstr,"%sRMS: %dms",gfx_w<420?"":"",slider11|0); // RMS button label
   sprintf(#normstr,"%sNormalise",gfx_w<420?"":""); // FIXED: don't pass extra arg
@@ -574,14 +648,28 @@ fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slide
   integrate_button.draw_button(gfx_x-8,rowpos, #intstr);
   rms_button.draw_button(gfx_x-8,rowpos, slider10>.5 ? #rmsstr : "RMS off"); // Add RMS button (clickable)
   normalize_button.draw_button(gfx_x-8,rowpos, slider12>.5 ? "Normalise on" : "Normalise off"); // NEW: normalise UI button (clickable)
+  freeze_button.draw_button(gfx_x-8,rowpos, freeze_spectrum>.5 ? "Freeze on" : "Freeze off");
   rowpos <= 0 ? phase_button.draw_button(gfx_x-8,rowpos, slider3?"phase on" : "phase off");
 );
+
+Kdb = 10 / log(10);
+xscale=800/(fftsize-4);
+num_bins = fftsize * 0.5;
 
 update ? (
   update=0;
 
   integrate_sc = 1;
-  slider5 > 0 ? (
+  avg_is_infinite > 0.5 ? (
+    integrate_en ? (
+      avg_infinite_frames += 1;
+      integrate_sc = 1 / max(avg_infinite_frames, 1);
+    ) : (
+      integrate_en = 1;
+      avg_infinite_frames = 1;
+      integrate_sc = 1;
+    );
+  ) : slider5 > 0 ? (
     integrate_now = time_precise();
     integrate_en ? (
       integrate_sc -= exp(-5 * 1000.0 * (integrate_now - integrate_lastt) / slider5);
@@ -589,8 +677,10 @@ update ? (
       integrate_en = 1;
     );
     integrate_lastt = integrate_now;
+    avg_infinite_frames = 0;
   ) : (
     integrate_en = 0;
+    avg_infinite_frames = 0;
   );
 
   windowsize != fftsize || windowtype != (slider4|0) ? (
@@ -610,13 +700,17 @@ update ? (
     pwr=.5/(pwr*2-window[i-1]);
     loop(fftsize*.5+1,window[i-=1]*=pwr);
     integrate_sc=1;
+    avg_is_infinite > 0.5 ? avg_infinite_frames = 1;
   );
 
   fftidx != (slider1|0) ? (
     fftidx=slider1|0;
     fftsize=2^(min(max(fftidx,0),11)+4);
     integrate_sc=1;
+    avg_is_infinite > 0.5 ? avg_infinite_frames = 1;
   );
+  xscale=800/(fftsize-4);
+  num_bins=fftsize*0.5;
 
   // FIX: Calculate RMS frames after fftsize is known
   slider10 > 0.5 ? (
@@ -653,7 +747,6 @@ update ? (
   fftworkspace[1]=0;
 
   ascale=gfx_h/$pi*0.25;
-  xscale=800/(fftsize-4);
 
   // Phase drawing (unchanged)
   buf3=fftworkspace;
@@ -715,7 +808,6 @@ update ? (
   peak_db = -1000;
   i=0;
   // conversion factor ln(power) -> dB: Kdb = 10 / ln(10)
-  Kdb = 10 / log(10);
   loop(fftsize*0.5,
     dbi = mag_buf_temp[i] * Kdb;
     dbi > peak_db ? peak_db = dbi;
@@ -767,7 +859,7 @@ slider12 > 0.5 ? (
   octavegain = floor(slider6*10+0.5) * ((log(10)*2.0/10.0)/(log(2)*20.0));
   octavegainoffs = log(1 + slider7 * fftsize / srate);
 
-  loop(fftsize*0.5,   
+  loop(fftsize*0.5,
     ty = mag_buf_temp[i];
     octavegain > 0 ? (
       ty += (log(i + 1) - octavegainoffs) * octavegain;
@@ -778,6 +870,7 @@ slider12 > 0.5 ? (
       buf2 += 1;
     );
 
+    display_main_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
     tx = log(1.0 + i * xscale) * wsc;
 
@@ -810,6 +903,7 @@ slider12 > 0.5 ? (
     lx=tx; ly=ty; ly2=ty2;
     i+=1;
   );
+  has_spectrum_data = 1;
 );
 
    // --- derived stream FFT and overlay drawing (derived stored in recpos2 region)
@@ -886,6 +980,7 @@ slider12 > 0.5 ? (
       buf2 += 1;
     );
 
+    display_side_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
     tx = log(1.0 + i * xscale) * wsc;
 
@@ -899,6 +994,53 @@ slider12 > 0.5 ? (
     i+=1;
     );
     ); // end slider8 > 0.5 conditional
+
+    has_spectrum_data && mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
+      hover_bin = (exp(max(min(mouse_x, gfx_w), 0) / wsc) - 1) / xscale;
+      hover_bin = min(max(hover_bin, 0), num_bins - 1);
+      hover_bin0 = floor(hover_bin);
+      hover_bin1 = min(hover_bin0 + 1, num_bins - 1);
+      hover_frac = hover_bin - hover_bin0;
+
+      spectrum_db = display_main_db[hover_bin0] + (display_main_db[hover_bin1] - display_main_db[hover_bin0]) * hover_frac;
+      cursor_db = ((20 - mouse_y) / (0.5 * sc)) * Kdb;
+      hover_freq = hover_bin * srate / fftsize;
+
+      hover_freq >= 1000 ?
+        sprintf(#hoverfreq, "%.2fkHz", hover_freq * 0.001)
+      :
+        sprintf(#hoverfreq, "%.1fHz", hover_freq);
+
+      small_mode ? gfx_setfont(2,"Arial",max(10*gfx_ext_retina,10));
+
+      sprintf(#hoverline1, "%s - %.1fdB", #hoverfreq, cursor_db);
+      sprintf(#hoverline2, "%.1fdB", spectrum_db);
+      gfx_measurestr(#hoverline1, hover_w1, hover_h1);
+      gfx_measurestr(#hoverline2, hover_w2, hover_h2);
+      hover_w = max(hover_w1, hover_w2);
+      hover_h = hover_h1 + hover_h2 + 2;
+
+      hover_x = mouse_x + 12;
+      hover_y = mouse_y + 12;
+      hover_x + hover_w + 6 > gfx_w ? hover_x = mouse_x - hover_w - 18;
+      hover_y + hover_h + 4 > gfx_h ? hover_y = mouse_y - hover_h - 16;
+      hover_x < 0 ? hover_x = 0;
+      hover_y < 0 ? hover_y = 0;
+
+      gfx_set(0,0,0,0.75);
+      gfx_rect(hover_x, hover_y, hover_w + 6, hover_h + 4, 1);
+      gfx_set(1,1,1,1);
+      gfx_x = hover_x + 3;
+      gfx_y = hover_y + 2;
+      gfx_drawstr(#hoverline1);
+      gfx_x = hover_x + 3;
+      gfx_y += hover_h1 + 2;
+      gfx_drawstr(#hoverline2);
+
+      small_mode ? (
+        gfx_ext_retina>1 ? gfx_setfont(1,"Arial",16*gfx_ext_retina,'b') : gfx_setfont(0);
+      );
+    );
 
     );
 
