@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="2a312073bb2888a347df592c67d7404646a438c8">
+<index version="1" name="7thResonance" commit="1f91dbd0e9a3a33115d121c49dd0597e254e17d5">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -577,6 +577,7 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 {\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Bar:beat\par}
 {\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Beats\par}
 {\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Optional Numbering\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Optional Naming\par}
 {\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Forum Post link https://forum.cockos.com/showthread.php?t=301676\sa180\par}
 }
 ]]></description>
@@ -618,6 +619,12 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.8" author="7thResonance" time="2025-08-08T13:53:49Z">
         <changelog><![CDATA[- Imgui update Fix]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance-Reaper-Scripts/raw/60293cec30b39eb0edaeca718f64f612c1b28f8f/Utilities/7R%20Marker%20n%20Region%20Exporter%20(GUI)(Project,%20Take,%20Item%20relative,%20Source%20Relative).lua</source>
+      </version>
+      <version name="1.9" author="7thResonance" time="2026-04-18T07:53:14Z">
+        <changelog><![CDATA[- enable disable marker/regions
+- enable disable indivitual marker/region components (name, length, start, end)
+- ordering of region output: name - length - start to end]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/1f91dbd0e9a3a33115d121c49dd0597e254e17d5/Utilities/7R%20Marker%20n%20Region%20Exporter%20(GUI)(Project,%20Take,%20Item%20relative,%20Source%20Relative).lua</source>
       </version>
     </reapack>
     <reapack name="7R MIDI AutoSend.lua" type="script" desc="7R MIDI Auto Send for CC Feedback">
