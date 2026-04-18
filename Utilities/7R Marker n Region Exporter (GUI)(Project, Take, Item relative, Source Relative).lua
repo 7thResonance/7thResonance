@@ -1,9 +1,11 @@
 --[[
 @description 7R Marker n Region Exporter (Project/Take/Regions)
 @author 7thResonance
-@version 1.8
+@version 1.9
 @changelog
-  - Imgui update Fix
+  - enable disable marker/regions
+  - enable disable indivitual marker/region components (name, length, start, end)
+  - ordering of region output: name - length - start to end
 @about GUI for exporting project and take markers and Regions in various formats.
   - HH:MM:SS
   - HH:MM:SS:MS
@@ -17,6 +19,7 @@
   - Beats
 
   - Optional Numbering
+  - Optional Naming
 
   - Forum Post link https://forum.cockos.com/showthread.php?t=301676
 
