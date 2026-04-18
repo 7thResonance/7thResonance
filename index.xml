@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="a581dd94befa0722ced82eea7e28c24126e0db86">
+<index version="1" name="7thResonance" commit="3e4e04aee104cccb6a2dedd0d04130be6ca5cb13">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -200,6 +200,12 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 -  Spectrum time averaging
 -  Mouse hover value readout]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/a581dd94befa0722ced82eea7e28c24126e0db86/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
+      </version>
+      <version name="1.8" author="7thResonance" time="2026-04-18T11:21:38Z">
+        <changelog><![CDATA[- spectrum time averaging bug fix
+- 7R weighting mode (beta)
+- Autofreeze on Stop (has a bug will fix on next) ]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/3e4e04aee104cccb6a2dedd0d04130be6ca5cb13/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
   </category>
