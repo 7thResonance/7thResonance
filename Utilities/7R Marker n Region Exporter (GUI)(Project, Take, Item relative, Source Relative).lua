@@ -1,7 +1,7 @@
 --[[
 @description 7R Marker n Region Exporter (Project/Take/Regions)
 @author 7thResonance
-@version 1.9
+@version 1.10
 @changelog
   - enable disable marker/regions
   - enable disable indivitual marker/region components (name, length, start, end)
@@ -86,7 +86,10 @@ local NUM_FORMATS = #format_options
 local marker_time_format = 1
 local marker_custom_format = ""
 local marker_numbering = true
+local marker_name_enabled = true
 local item_marker_timebase = 1 -- 1:Item-Relative, 2:Project-Relative, 3:Source-Relative
+local export_markers_enabled = true
+local export_regions_enabled = true
 local region_len_fmt = 1
 local region_start_fmt = 1
 local region_end_fmt = 1
@@ -94,7 +97,20 @@ local region_custom_len_format = ""
 local region_custom_start_format = ""
 local region_custom_end_format = ""
 local region_numbering = true
+local region_name_enabled = true
+local region_show_length = true
+local region_show_start = true
+local region_show_end = true
+local region_field_order = {"name", "length", "start", "end"}
 local apply_project_offset = false -- New option for project start offset
+
+local REGION_FIELD_KEYS = {"name", "length", "start", "end"}
+local REGION_FIELD_LABELS = {
+  name = "Name",
+  length = "Duration",
+  start = "Start",
+  ["end"] = "End",
+}
 
 -- Preset system variables (initialize after functions are defined)
 local presets = {}
@@ -114,6 +130,66 @@ local timebase_options = {
 ------------------------------------------------------
 -- UTILS
 ------------------------------------------------------
+
+local function copy_list(list)
+  local out = {}
+  if type(list) ~= "table" then return out end
+  for i = 1, #list do out[i] = list[i] end
+  return out
+end
+
+local function sanitize_region_field_order(order)
+  local sanitized = {}
+  local seen = {}
+  local had_input = (type(order) == "table")
+  if type(order) == "table" then
+    for i = 1, #order do
+      local key = order[i]
+      if REGION_FIELD_LABELS[key] and not seen[key] then
+        table.insert(sanitized, key)
+        seen[key] = true
+      end
+    end
+  end
+  -- Backward compatibility: old presets didn't include "name" in order;
+  -- keep legacy visual behavior by placing it first when missing.
+  if not seen.name and had_input then
+    table.insert(sanitized, 1, "name")
+    seen.name = true
+  end
+  for _, key in ipairs(REGION_FIELD_KEYS) do
+    if not seen[key] then table.insert(sanitized, key) end
+  end
+  return sanitized
+end
+
+local function get_region_field_enabled(field_key)
+  if field_key == "name" then return region_name_enabled end
+  if field_key == "length" then return region_show_length end
+  if field_key == "start" then return region_show_start end
+  if field_key == "end" then return region_show_end end
+  return false
+end
+
+local function set_region_field_enabled(field_key, enabled)
+  if field_key == "name" then
+    region_name_enabled = enabled
+  elseif field_key == "length" then
+    region_show_length = enabled
+  elseif field_key == "start" then
+    region_show_start = enabled
+  elseif field_key == "end" then
+    region_show_end = enabled
+  end
+end
+
+local function swap_region_field_order(order, idx_a, idx_b)
+  if type(order) ~= "table" then return end
+  if idx_a == idx_b then return end
+  if idx_a < 1 or idx_b < 1 then return end
+  if idx_a > #order or idx_b > #order then return end
+  order[idx_a], order[idx_b] = order[idx_b], order[idx_a]
+end
 
 local function get_project_framerate()
   local rate = reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("projfrrate", -1) or -1
@@ -490,11 +566,12 @@ local function GetItemName(item)
   return fn:match("[^\\/]+$") or "Unnamed"
 end
 
-local function GenerateMarkerBlock(markers, fmt, custom_fmt, numbering, framerate, timebase)
+local function GenerateMarkerBlock(markers, fmt, custom_fmt, numbering, framerate, timebase, include_name)
   local lines = {}
   for i, m in ipairs(markers) do
     local idx = numbering and (tostring(i) .. " ") or ""
     local pos = m.pos
+    local marker_name = (include_name ~= false) and (m.name or "") or ""
     local time_str
     
     -- Apply project offset for:
@@ -539,7 +616,7 @@ local function GenerateMarkerBlock(markers, fmt, custom_fmt, numbering, framerat
         fullbeats = context_fullbeats,
         seconds = context_pos,
         frames = frames,
-        markername = m.name or "",
+        markername = marker_name,
         itemname = m.itemname or "",
         tempo = tempo,
         tsig_num = tsig_num,
@@ -558,7 +635,10 @@ local function GenerateMarkerBlock(markers, fmt, custom_fmt, numbering, framerat
     else
       time_str = format_time_with_offset(pos, fmt, framerate, should_apply_offset)
     end
-    local line = string.format("%s%s %s", idx, time_str, m.name)
+    local line = idx .. time_str
+    if marker_name ~= "" then
+      line = line .. " " .. marker_name
+    end
     table.insert(lines, line)
   end
   return lines
@@ -566,11 +646,13 @@ end
 
 local function GenerateRegionBlock(regions, fmt_len, fmt_start, fmt_end,
                                   custom_len_fmt, custom_start_fmt, custom_end_fmt,
-                                  framerate, numbering)
+                                  framerate, numbering, include_name, show_length, show_start, show_end, field_order)
   local lines = {}
+  local normalized_order = sanitize_region_field_order(field_order)
   for i, r in ipairs(regions) do
     local N = numbering and (tostring(i) .. ". ") or ""
     local name = r.name or ""
+    local region_name = (include_name ~= false) and name or ""
     local length, start, end_ = r.length, r.start, r["end"]
 
     -- Pre-calculate context data for custom formats
@@ -595,7 +677,7 @@ local function GenerateRegionBlock(regions, fmt_len, fmt_start, fmt_end,
         beat = (beat_len or 0),  -- Duration beats (0-based)
         fullbeats = fullbeats_len or 0,
         frames = frames_len,
-        markername = name,
+        markername = region_name,
         itemname = "",
         tempo = tempo,
         tsig_num = tsig_num,
@@ -618,7 +700,7 @@ local function GenerateRegionBlock(regions, fmt_len, fmt_start, fmt_end,
         beat = (beat_start or 0) + 1,
         fullbeats = (fullbeats_start or 0) + (apply_project_offset and get_project_start_measure_offset() * 4 or 0),
         frames = frames_start,
-        markername = name,
+        markername = region_name,
         itemname = "",
         tempo = tempo,
         tsig_num = tsig_num,
@@ -641,7 +723,7 @@ local function GenerateRegionBlock(regions, fmt_len, fmt_start, fmt_end,
         beat = (beat_end or 0) + 1,
         fullbeats = (fullbeats_end or 0) + (apply_project_offset and get_project_start_measure_offset() * 4 or 0),
         frames = frames_end,
-        markername = name,
+        markername = region_name,
         itemname = "",
         tempo = tempo,
         tsig_num = tsig_num,
@@ -656,7 +738,45 @@ local function GenerateRegionBlock(regions, fmt_len, fmt_start, fmt_end,
       end_str = format_time_with_offset(end_, fmt_end, framerate, apply_project_offset)
     end
 
-    local line = string.format("%s%s - %s - %s to %s", N, name, len_str, start_str, end_str)
+    local values_by_key = {
+      name = region_name,
+      length = len_str,
+      start = start_str,
+      ["end"] = end_str,
+    }
+    local enabled_by_key = {
+      name = include_name ~= false,
+      length = show_length ~= false,
+      start = show_start ~= false,
+      ["end"] = show_end ~= false,
+    }
+
+    local ordered_keys = {}
+    for _, key in ipairs(normalized_order) do
+      if enabled_by_key[key] then
+        table.insert(ordered_keys, key)
+      end
+    end
+
+    local parts = {}
+    local k = 1
+    while k <= #ordered_keys do
+      local key = ordered_keys[k]
+      if key == "start" and ordered_keys[k + 1] == "end" then
+        table.insert(parts, values_by_key.start .. " to " .. values_by_key["end"])
+        k = k + 2
+      else
+        table.insert(parts, values_by_key[key] or "")
+        k = k + 1
+      end
+    end
+
+    local line = N
+    if #parts > 0 then
+      line = line .. table.concat(parts, " - ")
+    else
+      line = line:gsub("%s+$", "")
+    end
     table.insert(lines, line)
   end
   return lines
@@ -772,6 +892,11 @@ end
 ------------------------------------------------------
 
 local function Main_Export()
+  if not export_markers_enabled and not export_regions_enabled then
+    reaper.ShowMessageBox("Both marker and region export are disabled.", "Nothing to Export", 0)
+    return
+  end
+
   local out = {}
   local framerate = get_project_framerate()
 
@@ -781,43 +906,48 @@ local function Main_Export()
     time_sel_start, time_sel_end = nil, nil
   end
 
-  -- Project Markers
-  local proj_markers = GetProjectMarkerSelection(time_sel_start, time_sel_end)
-  if #proj_markers > 0 then
-    table.insert(out, "Project Markers:")
-    local proj_lines = GenerateMarkerBlock(proj_markers, marker_time_format, marker_custom_format, marker_numbering, framerate, 2)
-    for _, line in ipairs(proj_lines) do table.insert(out, line) end
-    table.insert(out, "")
-  end
-
-  -- Item/Take Markers
-  local items = GetSelectedItems()
-  if #items > 0 then
-    for i, item in ipairs(items) do
-      local name = GetItemName(item)
-      table.insert(out, "Item: " .. name)
-      local timebase = item_marker_timebase
-      local markers = GetTakeMarkersFiltered(item, timebase, time_sel_start, time_sel_end)
-      -- add itemname to context
-      for _, m in ipairs(markers) do m.itemname = name end
-      local lines = GenerateMarkerBlock(markers, marker_time_format, marker_custom_format, marker_numbering, framerate, timebase)
-      for _, line in ipairs(lines) do table.insert(out, line) end
+  if export_markers_enabled then
+    -- Project Markers
+    local proj_markers = GetProjectMarkerSelection(time_sel_start, time_sel_end)
+    if #proj_markers > 0 then
+      table.insert(out, "Project Markers:")
+      local proj_lines = GenerateMarkerBlock(proj_markers, marker_time_format, marker_custom_format, marker_numbering, framerate, 2, marker_name_enabled)
+      for _, line in ipairs(proj_lines) do table.insert(out, line) end
       table.insert(out, "")
+    end
+
+    -- Item/Take Markers
+    local items = GetSelectedItems()
+    if #items > 0 then
+      for i, item in ipairs(items) do
+        local name = GetItemName(item)
+        table.insert(out, "Item: " .. name)
+        local timebase = item_marker_timebase
+        local markers = GetTakeMarkersFiltered(item, timebase, time_sel_start, time_sel_end)
+        -- add itemname to context
+        for _, m in ipairs(markers) do m.itemname = name end
+        local lines = GenerateMarkerBlock(markers, marker_time_format, marker_custom_format, marker_numbering, framerate, timebase, marker_name_enabled)
+        for _, line in ipairs(lines) do table.insert(out, line) end
+        table.insert(out, "")
+      end
     end
   end
 
-  -- Regions
-  local regions = GetProjectRegionsFiltered(time_sel_start, time_sel_end)
-  if #regions > 0 then
-    table.insert(out, "Regions:")
-    local region_lines = GenerateRegionBlock(
-      regions,
-      region_len_fmt, region_start_fmt, region_end_fmt,
-      region_custom_len_format, region_custom_start_format, region_custom_end_format,
-      framerate, region_numbering
-    )
-    for _, line in ipairs(region_lines) do table.insert(out, line) end
-    table.insert(out, "")
+  if export_regions_enabled then
+    -- Regions
+    local regions = GetProjectRegionsFiltered(time_sel_start, time_sel_end)
+    if #regions > 0 then
+      table.insert(out, "Regions:")
+      local region_lines = GenerateRegionBlock(
+        regions,
+        region_len_fmt, region_start_fmt, region_end_fmt,
+        region_custom_len_format, region_custom_start_format, region_custom_end_format,
+        framerate, region_numbering, region_name_enabled,
+        region_show_length, region_show_start, region_show_end, region_field_order
+      )
+      for _, line in ipairs(region_lines) do table.insert(out, line) end
+      table.insert(out, "")
+    end
   end
 
   local result = table.concat(out, "\n")
@@ -845,16 +975,24 @@ local function apply_preset(name)
   if p then
     marker_time_format = p.marker_time_format or 1
     marker_custom_format = p.marker_custom_format or ""
-    marker_numbering = p.marker_numbering or true
+    marker_numbering = (p.marker_numbering ~= nil) and p.marker_numbering or true
+    marker_name_enabled = (p.marker_name_enabled ~= nil) and p.marker_name_enabled or true
     item_marker_timebase = p.item_marker_timebase or 1
+    export_markers_enabled = (p.export_markers_enabled ~= nil) and p.export_markers_enabled or true
+    export_regions_enabled = (p.export_regions_enabled ~= nil) and p.export_regions_enabled or true
     region_len_fmt = p.region_len_fmt or 1
     region_start_fmt = p.region_start_fmt or 1
     region_end_fmt = p.region_end_fmt or 1
     region_custom_len_format = p.region_custom_len_format or ""
     region_custom_start_format = p.region_custom_start_format or ""
     region_custom_end_format = p.region_custom_end_format or ""
-    region_numbering = p.region_numbering or true
-    apply_project_offset = p.apply_project_offset or false
+    region_numbering = (p.region_numbering ~= nil) and p.region_numbering or true
+    region_name_enabled = (p.region_name_enabled ~= nil) and p.region_name_enabled or true
+    region_show_length = (p.region_show_length ~= nil) and p.region_show_length or true
+    region_show_start = (p.region_show_start ~= nil) and p.region_show_start or true
+    region_show_end = (p.region_show_end ~= nil) and p.region_show_end or true
+    region_field_order = sanitize_region_field_order(copy_list(p.region_field_order))
+    apply_project_offset = (p.apply_project_offset ~= nil) and p.apply_project_offset or false
   end
 end
 
@@ -903,7 +1041,10 @@ local function PresetGUI()
         marker_time_format = marker_time_format,
         marker_custom_format = marker_custom_format,
         marker_numbering = marker_numbering,
+        marker_name_enabled = marker_name_enabled,
         item_marker_timebase = item_marker_timebase,
+        export_markers_enabled = export_markers_enabled,
+        export_regions_enabled = export_regions_enabled,
         region_len_fmt = region_len_fmt,
         region_start_fmt = region_start_fmt,
         region_end_fmt = region_end_fmt,
@@ -911,6 +1052,11 @@ local function PresetGUI()
         region_custom_start_format = region_custom_start_format,
         region_custom_end_format = region_custom_end_format,
         region_numbering = region_numbering,
+        region_name_enabled = region_name_enabled,
+        region_show_length = region_show_length,
+        region_show_start = region_show_start,
+        region_show_end = region_show_end,
+        region_field_order = copy_list(region_field_order),
         apply_project_offset = apply_project_offset
       }
       
@@ -974,6 +1120,10 @@ local function loop()
   if visible then
     reaper.ImGui_PushFont(ctx, font, 14)
     reaper.ImGui_Text(ctx, "Marker & Region Export Options")
+    reaper.ImGui_SameLine(ctx)
+    _, export_markers_enabled = reaper.ImGui_Checkbox(ctx, "Export Markers", export_markers_enabled)
+    reaper.ImGui_SameLine(ctx)
+    _, export_regions_enabled = reaper.ImGui_Checkbox(ctx, "Export Regions", export_regions_enabled)
     reaper.ImGui_PopFont(ctx)
 
     PresetGUI()
@@ -988,6 +1138,7 @@ local function loop()
     end
 
     _, marker_numbering = reaper.ImGui_Checkbox(ctx, "Enable Marker Numbering (1, 2...)", marker_numbering)
+    _, marker_name_enabled = reaper.ImGui_Checkbox(ctx, "Include Marker Names", marker_name_enabled)
 
     local num_sel = reaper.CountSelectedMediaItems(0)
     if num_sel > 0 then
@@ -1023,6 +1174,54 @@ local function loop()
     -- Regions
     reaper.ImGui_Text(ctx, "Region Export Options")
     _, region_numbering = reaper.ImGui_Checkbox(ctx, "Enable Region Numbering (1. 2. ...)", region_numbering)
+    reaper.ImGui_TextDisabled(ctx, "Drag these checkbox rows to reorder Name/Duration/Start/End in export:")
+
+    region_field_order = sanitize_region_field_order(region_field_order)
+    local reorder_from_idx, reorder_to_idx = nil, nil
+    for pos = 1, #region_field_order do
+      local key = region_field_order[pos]
+      local field_label = REGION_FIELD_LABELS[key] or key
+      local checkbox_label
+      if key == "name" then
+        checkbox_label = "Include Region Names##region_field_name"
+      else
+        checkbox_label = "Export Region " .. field_label .. "##region_field_" .. key
+      end
+      local field_enabled = get_region_field_enabled(key)
+      local changed, new_enabled = reaper.ImGui_Checkbox(ctx, checkbox_label, field_enabled)
+      if changed then
+        set_region_field_enabled(key, new_enabled)
+      end
+
+      if reaper.ImGui_BeginDragDropSource(ctx) then
+        reaper.ImGui_SetDragDropPayload(ctx, "REGION_FIELD_REORDER", tostring(pos))
+        local drag_label = (key == "name") and "Region Names" or field_label
+        reaper.ImGui_Text(ctx, "Move: " .. drag_label)
+        reaper.ImGui_EndDragDropSource(ctx)
+      end
+
+      if reaper.ImGui_BeginDragDropTarget(ctx) then
+        local ok, payload = reaper.ImGui_AcceptDragDropPayload(ctx, "REGION_FIELD_REORDER")
+        if ok then
+          local from_idx = tonumber(payload)
+          if from_idx and from_idx >= 1 and from_idx <= #region_field_order and from_idx ~= pos then
+            reorder_from_idx = from_idx
+            reorder_to_idx = pos
+          end
+        end
+        reaper.ImGui_EndDragDropTarget(ctx)
+      end
+    end
+
+    if reorder_from_idx and reorder_to_idx then
+      swap_region_field_order(region_field_order, reorder_from_idx, reorder_to_idx)
+    end
+
+    if not (region_name_enabled or region_show_length or region_show_start or region_show_end) then
+      reaper.ImGui_Text(ctx, "All region fields are disabled. Export will include numbering only (if enabled).")
+    elseif not (region_show_length or region_show_start or region_show_end) then
+      reaper.ImGui_Text(ctx, "All region time fields are disabled. Export will include region names only.")
+    end
 
     _, region_len_fmt = reaper.ImGui_Combo(ctx, "Region Length Format", region_len_fmt-1, table.concat(format_options, "\0").."\0")
     region_len_fmt = region_len_fmt + 1
