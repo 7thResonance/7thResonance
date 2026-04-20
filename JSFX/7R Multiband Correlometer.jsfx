@@ -1,0 +1,327 @@
+desc:7R Multiband Correlometer
+author:7thResonance
+version: 1.0
+about: A simple Multiband Correlometer
+options:no_meter
+
+// -------------------------------------------------------
+//  64-Band Correlometer  -  REAPER JSFX
+//  Measures L/R phase correlation across 64 log-spaced
+//  frequency bands and displays as vertical bars.
+//  +1 = in-phase (mono-compatible)
+//   0 = uncorrelated
+//  -1 = anti-phase
+//
+//  Full mode : 64 bands, grid lines, freq markers, peak ticks
+//  Small mode: 32 bands (pairs averaged), bars only
+// -------------------------------------------------------
+options:gfx_hz=63 
+@init
+
+  gfx_ext_retina == 0 ? gfx_ext_retina = 1;
+  gfx_ext_flags |= 0x100 | 0x200;
+
+  fft_size  = 8192;   // must be a power of 2
+  num_bands = 64;     // always compute 64 bands; small mode averages to 32
+  hop_size  = fft_size / 4;   // 75% overlap -> 4x update rate
+  nyq       = fft_size / 2;
+
+  // ---- memory layout ----------------------------------
+  mem_l    = 0;               // [fft_size]   raw left input
+  mem_r    = fft_size;        // [fft_size]   raw right input
+  mem_fl   = fft_size * 2;    // [fft_size*2] complex FFT - left
+  mem_fr   = fft_size * 4;    // [fft_size*2] complex FFT - right
+  mem_win  = fft_size * 6;    // [fft_size]   Hann window coefficients
+  mem_corr = fft_size * 7;    // [128]        smoothed correlation (64 bands)
+  mem_bst  = mem_corr + 128;  // [128]        band start bin index
+  mem_ben  = mem_corr + 256;  // [128]        band end bin index
+  mem_peak = mem_corr + 384;  // [128]        peak-hold values
+  mem_pkdt = mem_corr + 512;  // [128]        peak-hold decay timer
+
+  buf_pos = 0;
+
+  // ---- Hann window ------------------------------------
+  i = 0;
+  loop(fft_size,
+    mem_win[i] = 0.5 * (1.0 - cos(2.0 * $pi * i / fft_size));
+    i += 1;
+  );
+
+  // ---- Log-spaced band boundaries (64 bands) ----------
+  log_nyq = log(nyq);
+  i = 0;
+  loop(num_bands,
+    s = max(1, floor(exp(log_nyq *  i      / num_bands)));
+    e = max(s+1, ceil(exp(log_nyq * (i+1) / num_bands)));
+    e > nyq ? e = nyq;
+    mem_bst[i] = s;
+    mem_ben[i] = e;
+    i += 1;
+  );
+
+  // ---- Initial state ----------------------------------
+  i = 0;
+  loop(num_bands,
+    mem_corr[i] = 0;
+    mem_peak[i] = 0;
+    mem_pkdt[i] = 0;
+    i += 1;
+  );
+
+  smooth_coeff = 0.18;  // IIR smoothing (higher = faster response)
+  peak_hold    = 30;    // frames before peak starts falling
+  peak_decay   = 0.04;  // peak fall rate per frame
+
+  // ---- -90 dBFS energy gate ---------------------------
+  // sll/srr are sums of squared unnormalized FFT magnitudes.
+  // By Parseval for unnormalized FFT with Hann window:
+  //   average per-bin energy = (3/4) * fft_size * signal_power
+  // At -90 dBFS: signal_power = 10^(-90/10) = 1e-9
+  // So: gate_per_bin = 0.75 * fft_size * 1e-9
+  // Per band: gate_energy = gate_per_bin * bin_count
+  gate_per_bin = 0.75 * fft_size * pow(10, -90.0 / 10.0);
+
+
+@sample
+
+  mem_l[buf_pos] = spl0;
+  mem_r[buf_pos] = spl1;
+  buf_pos += 1;
+
+  buf_pos >= fft_size ? (
+
+    // --- Window and interleave into complex buffers ----
+    i = 0;
+    loop(fft_size,
+      w = mem_win[i];
+      mem_fl[i*2]   = mem_l[i] * w;
+      mem_fl[i*2+1] = 0;
+      mem_fr[i*2]   = mem_r[i] * w;
+      mem_fr[i*2+1] = 0;
+      i += 1;
+    );
+
+    fft(mem_fl, fft_size);  fft_permute(mem_fl, fft_size);
+    fft(mem_fr, fft_size);  fft_permute(mem_fr, fft_size);
+
+    // --- Per-band Pearson correlation ------------------
+    //  corr = Re( sum L[k]*conj(R[k]) ) / sqrt( sum|L|^2 * sum|R|^2 )
+    b = 0;
+    loop(num_bands,
+      sll = 0;
+      srr = 0;
+      slr = 0;
+
+      bin_count = mem_ben[b] - mem_bst[b];
+      pl = mem_fl + mem_bst[b] * 2;
+      pr = mem_fr + mem_bst[b] * 2;
+
+      loop(bin_count,
+        lre = pl[0];  lim = pl[1];
+        rre = pr[0];  rim = pr[1];
+
+        sll += lre*lre + lim*lim;
+        srr += rre*rre + rim*rim;
+        slr += lre*rre + lim*rim;
+
+        pl += 2;
+        pr += 2;
+      );
+
+      // -90 dBFS energy gate: below this threshold both channels
+      // contain only FFT rounding residuals that are identical on
+      // L and R (both input silence), producing a spurious +1.
+      gate_energy = gate_per_bin * bin_count;
+      (sll > gate_energy || srr > gate_energy) ? (
+        c = slr / sqrt(sll * srr);
+        c = max(-1.0, min(1.0, c));
+      ) : (
+        c = 0;
+      );
+
+      // IIR smooth
+      mem_corr[b] += (c - mem_corr[b]) * smooth_coeff;
+
+      // Peak hold
+      abs(mem_corr[b]) > abs(mem_peak[b]) ? (
+        mem_peak[b] = mem_corr[b];
+        mem_pkdt[b] = 0;
+      ) : (
+        mem_pkdt[b] += 1;
+        mem_pkdt[b] > peak_hold ? (
+          mem_peak[b] *= (1.0 - peak_decay);
+        );
+      );
+
+      b += 1;
+    );
+
+    // --- Slide buffer: keep newest (fft_size - hop_size) samples ---
+    i = 0;
+    loop(fft_size - hop_size,
+      mem_l[i] = mem_l[i + hop_size];
+      mem_r[i] = mem_r[i + hop_size];
+      i += 1;
+    );
+    buf_pos = fft_size - hop_size;
+
+  ); // end buf_pos >= fft_size
+
+
+@gfx 640 320
+
+  // Detect small/embedded mode - matches spectrum analyser convention
+  small_mode = gfx_w < 200 * gfx_ext_retina || gfx_h < 50 * gfx_ext_retina;
+
+  gfx_w > 0 && gfx_h > 0 ? (
+
+  w  = gfx_w;
+  h  = gfx_h;
+  cy = floor(h * 0.5 + 0.5);
+  hh = cy - 2;   // usable half-height in pixels
+
+  // Display bands: 64 in full mode, 32 in small mode (adjacent pairs averaged)
+  display_bands = small_mode ? 32 : 64;
+  bw = w / display_bands;
+
+  // ---- Background -------------------------------------
+  gfx_r = 0.06; gfx_g = 0.06; gfx_b = 0.10; gfx_a = 1;
+  gfx_rect(0, 0, w, h);
+
+  // ---- Correlation grid lines (full mode only) --------
+  small_mode ? 0 : (
+    gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.30; gfx_a = 1;
+    gfx_line(0, 1,         w, 1,         0);
+    gfx_line(0, h-2,       w, h-2,       0);
+    gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.21;
+    gfx_line(0, cy - hh/2, w, cy - hh/2, 0);
+    gfx_line(0, cy + hh/2, w, cy + hh/2, 0);
+  );
+
+  // ---- Frequency grid (full mode only) ----------------
+  // Vertical lines + labels at standard frequency markers.
+  // X position: log(freq * fft_size / srate) / log_nyq * w
+  small_mode ? 0 : (
+    gfx_setfont(1, "Arial", 9);
+
+    freq_mark_n = 9;
+    freq_mark_0 = 50;
+    freq_mark_1 = 100;
+    freq_mark_2 = 200;
+    freq_mark_3 = 500;
+    freq_mark_4 = 1000;
+    freq_mark_5 = 2000;
+    freq_mark_6 = 5000;
+    freq_mark_7 = 10000;
+    freq_mark_8 = 20000;
+
+    fm_i = 0;
+    loop(freq_mark_n,
+      fm_i == 0 ? fm_f = freq_mark_0 :
+      fm_i == 1 ? fm_f = freq_mark_1 :
+      fm_i == 2 ? fm_f = freq_mark_2 :
+      fm_i == 3 ? fm_f = freq_mark_3 :
+      fm_i == 4 ? fm_f = freq_mark_4 :
+      fm_i == 5 ? fm_f = freq_mark_5 :
+      fm_i == 6 ? fm_f = freq_mark_6 :
+      fm_i == 7 ? fm_f = freq_mark_7 :
+                  fm_f = freq_mark_8;
+
+      fm_bin = fm_f * fft_size / srate;
+      fm_bin >= 1 && fm_bin <= nyq ? (
+        fm_x = floor(log(fm_bin) / log_nyq * w);
+
+        gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.35; gfx_a = 1;
+        gfx_line(fm_x, 0, fm_x, h, 0);
+
+        fm_f >= 1000 ? (
+          sprintf(#fm_label, "%dk", fm_f / 1000);
+        ) : (
+          sprintf(#fm_label, "%d", fm_f);
+        );
+
+        gfx_measurestr(#fm_label, fm_lw, fm_lh);
+        gfx_r = 0.35; gfx_g = 0.40; gfx_b = 0.55; gfx_a = 1;
+        gfx_x = fm_x - floor(fm_lw / 2);
+        gfx_x < 1 ? gfx_x = 1;
+        gfx_x + fm_lw > w - 1 ? gfx_x = w - fm_lw - 1;
+        gfx_y = h - fm_lh - 2;
+        gfx_drawstr(#fm_label);
+      );
+
+      fm_i += 1;
+    );
+  );
+
+  // ---- Bars -------------------------------------------
+  // Full mode: draw all 64 bands directly.
+  // Small mode: draw 32 bars, each the average of two adjacent bands.
+  i = 0;
+  loop(display_bands,
+    // Get correlation value for this display bar
+    small_mode ? (
+      // Average adjacent pair from the 64-band data
+      c = (mem_corr[i*2] + mem_corr[i*2+1]) * 0.5;
+    ) : (
+      c = mem_corr[i];
+    );
+
+    bx    = floor(i * bw);
+    bw_px = floor((i+1) * bw) - bx;
+    bar_h = floor(c * hh);
+
+    // Colour: blue for positive, pink for negative
+    c >= 0 ? (
+      t = c;
+      gfx_r = 0.10 + t * 0.10;
+      gfx_g = 0.25 + t * 0.20;
+      gfx_b = 0.70 + t * 0.30;
+    ) : (
+      t = -c;
+      gfx_r = 0.90 + t * 0.10;
+      gfx_g = 0.10 + t * 0.20;
+      gfx_b = 0.55 + t * 0.35;
+    );
+    gfx_a = 0.60 + abs(c) * 0.40;
+
+    bar_h > 0 ? (
+      gfx_rect(bx, cy - bar_h, bw_px, bar_h);
+    ) : bar_h < 0 ? (
+      gfx_rect(bx, cy,         bw_px, -bar_h);
+    );
+
+    // ---- Peak tick (full mode only) -------------------
+    small_mode ? 0 : (
+      pk = mem_peak[i];
+      abs(pk) > 0.015 ? (
+        pk_y = cy - floor(pk * hh);
+        pk >= 0 ? (
+          gfx_r = 0.30; gfx_g = 0.60; gfx_b = 1.00;
+        ) : (
+          gfx_r = 1.00; gfx_g = 0.20; gfx_b = 0.70;
+        );
+        gfx_a = 0.90;
+        gfx_line(bx, pk_y, bx + bw_px - 1, pk_y, 0);
+      );
+    );
+
+    i += 1;
+  );
+
+  // ---- Zero line (full mode only) ---------------------
+  small_mode ? 0 : (
+    gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.65; gfx_a = 0.95;
+    gfx_line(0, cy, w, cy, 0);
+  );
+
+  // ---- Axis labels (full mode only) -------------------
+  small_mode ? 0 : (
+    gfx_setfont(1, "Arial", 9);
+    gfx_r = 0.45; gfx_g = 0.55; gfx_b = 0.65; gfx_a = 1.0;
+    gfx_x = 3;  gfx_y = 3;       gfx_drawstr("+1");
+    gfx_x = 3;  gfx_y = cy - 6;  gfx_drawstr(" 0");
+    gfx_x = 3;  gfx_y = h - 13;  gfx_drawstr("-1");
+  );
+
+  ); // end bounds check
+
