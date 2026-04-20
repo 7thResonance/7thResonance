@@ -1,8 +1,9 @@
 desc:7R Multiband Correlometer
 author:7thResonance
-version: 1.2
+version: 1.3
 about: A simple Multiband Correlometer
-changelog: - removed avging to 32 bands
+        pan visualisation
+changelog: - added left right energy markers (pan visualisation)
 options:no_meter
 
 // -------------------------------------------------------
@@ -13,7 +14,7 @@ options:no_meter
 //   0 = uncorrelated
 //  -1 = anti-phase
 // -------------------------------------------------------
-options:gfx_hz=63 
+
 @init
 
   gfx_ext_retina == 0 ? gfx_ext_retina = 1;
@@ -35,6 +36,10 @@ options:gfx_hz=63
   mem_ben  = mem_corr + 256;  // [128]        band end bin index
   mem_peak = mem_corr + 384;  // [128]        peak-hold values
   mem_pkdt = mem_corr + 512;  // [128]        peak-hold decay timer
+  mem_en   = mem_corr + 640;  // [128]        raw L energy per band
+  mem_enr  = mem_corr + 768;  // [128]        raw R energy per band
+  mem_ens  = mem_corr + 896;  // [128]        smoothed L energy per band
+  mem_ensr = mem_corr + 1024; // [128]        smoothed R energy per band
 
   buf_pos = 0;
 
@@ -63,12 +68,18 @@ options:gfx_hz=63
     mem_corr[i] = 0;
     mem_peak[i] = 0;
     mem_pkdt[i] = 0;
+    mem_en[i]  = 0;
+    mem_enr[i] = 0;
+    mem_ens[i]  = 0;
+    mem_ensr[i] = 0;
     i += 1;
   );
 
   smooth_coeff = 0.18;  // IIR smoothing (higher = faster response)
   peak_hold    = 30;    // frames before peak starts falling
   peak_decay   = 0.04;  // peak fall rate per frame
+  show_lr_energy = 1;    // 1 = show L/R energy lines
+  btn_clicked = 0;      // button click tracker
 
   // ---- -90 dBFS energy gate ---------------------------
   // sll/srr are sums of squared unnormalized FFT magnitudes.
@@ -126,15 +137,21 @@ options:gfx_hz=63
         pr += 2;
       );
 
+      // Store raw energy for smoothing
+      mem_en[b]  = sll;
+      mem_enr[b] = srr;
+
       // -90 dBFS energy gate: below this threshold both channels
       // contain only FFT rounding residuals that are identical on
       // L and R (both input silence), producing a spurious +1.
       gate_energy = gate_per_bin * bin_count;
-      (sll > gate_energy || srr > gate_energy) ? (
+      (sll > gate_energy && srr > gate_energy) ? (
         c = slr / sqrt(sll * srr);
         c = max(-1.0, min(1.0, c));
       ) : (
         c = 0;
+        // Reset peak when signal goes silent
+        mem_peak[b] = 0;
       );
 
       // IIR smooth
@@ -151,6 +168,20 @@ options:gfx_hz=63
         );
       );
 
+      b += 1;
+    );
+
+    // --- Smooth per-band energy ---
+    b = 0;
+    loop(num_bands,
+      old_el = mem_ens[b];
+      old_er = mem_ensr[b];
+      raw_el = mem_en[b];
+      raw_er = mem_enr[b];
+      // Faster IIR for energy to see per-band changes
+      en_smooth = 0.4;
+      mem_ens[b]  = old_el > 0 ? old_el + (raw_el - old_el) * en_smooth : raw_el;
+      mem_ensr[b] = old_er > 0 ? old_er + (raw_er - old_er) * en_smooth : raw_er;
       b += 1;
     );
 
@@ -182,8 +213,40 @@ options:gfx_hz=63
   bw = w / display_bands;
 
   // ---- Background -------------------------------------
-  gfx_r = 0.06; gfx_g = 0.06; gfx_b = 0.10; gfx_a = 1;
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
   gfx_rect(0, 0, w, h);
+
+  // ---- LR Button (hidden in small mode) ----
+  small_mode ? 0 : (
+    btn_x = w - 50;
+    btn_y = 2;
+    btn_w = 48;
+    btn_h = 18;
+    gfx_setfont(1, "Arial", 10);
+    // Button background
+    show_lr_energy ? (
+      gfx_r = 0.15; gfx_g = 0.35; gfx_b = 0.55; gfx_a = 1;
+    ) : (
+      gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.25; gfx_a = 1;
+    );
+    gfx_rect(btn_x, btn_y, btn_w, btn_h);
+    // Button border
+    gfx_r = 0.40; gfx_g = 0.45; gfx_b = 0.55; gfx_a = 1;
+    gfx_rect(btn_x, btn_y, btn_w, 1);
+    gfx_rect(btn_x, btn_y, 1, btn_h);
+    gfx_rect(btn_x, btn_y + btn_h - 1, btn_w, 1);
+    gfx_rect(btn_x + btn_w - 1, btn_y, 1, btn_h);
+    // Button text
+    gfx_r = 0.70; gfx_g = 0.75; gfx_b = 0.85; gfx_a = 1;
+    gfx_x = btn_x + 6; gfx_y = btn_y + 4;
+    gfx_drawstr("LR");
+    // Click handling
+    mouse_x >= btn_x && mouse_x < btn_x + btn_w && mouse_y >= btn_y && mouse_y < btn_y + btn_h && (mouse_cap & 1) && !btn_clicked ? (
+      show_lr_energy = !show_lr_energy;
+      btn_clicked = 1;
+    );
+    !(mouse_cap & 1) ? btn_clicked = 0;
+  );
 
    // ---- Correlation grid lines (hidden in small mode) --------
    small_mode ? 0 : (
@@ -254,28 +317,31 @@ options:gfx_hz=63
    loop(64,
      c = mem_corr[i];
 
-     bx    = floor(i * bw);
-     bw_px = floor((i+1) * bw) - bx;
-     bar_h = floor(c * hh);
+     // Skip very small values
+     abs(c) < 0.01 ? 0 : (
+       bx    = floor(i * bw);
+       bw_px = floor((i+1) * bw) - bx;
+       bar_h = floor(c * hh);
 
-     // Colour: blue for positive, pink for negative
-     c >= 0 ? (
-       t = c;
-       gfx_r = 0.10 + t * 0.10;
-       gfx_g = 0.25 + t * 0.20;
-       gfx_b = 0.70 + t * 0.30;
-     ) : (
-       t = -c;
-       gfx_r = 0.90 + t * 0.10;
-       gfx_g = 0.10 + t * 0.20;
-       gfx_b = 0.55 + t * 0.35;
-     );
-     gfx_a = 0.60 + abs(c) * 0.40;
+       // Colour: blue for positive, pink for negative
+       c >= 0 ? (
+         t = c;
+         gfx_r = 0.10 + t * 0.10;
+         gfx_g = 0.25 + t * 0.20;
+         gfx_b = 0.70 + t * 0.30;
+       ) : (
+         t = -c;
+         gfx_r = 0.90 + t * 0.10;
+         gfx_g = 0.10 + t * 0.20;
+         gfx_b = 0.55 + t * 0.35;
+       );
+       gfx_a = 0.60 + abs(c) * 0.40;
 
-     bar_h > 0 ? (
-       gfx_rect(bx, cy - bar_h, bw_px, bar_h);
-     ) : bar_h < 0 ? (
-       gfx_rect(bx, cy,         bw_px, -bar_h);
+       bar_h > 0 ? (
+         gfx_rect(bx, cy - bar_h, bw_px, bar_h);
+       ) : bar_h < 0 ? (
+         gfx_rect(bx, cy,         bw_px, -bar_h);
+       );
      );
 
      // ---- Peak tick (hidden in small mode) -------------
@@ -296,13 +362,37 @@ options:gfx_hz=63
       i += 1;
      );
 
-   // ---- Zero line (hidden in small mode) --------------
-   small_mode ? 0 : (
-     gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.65; gfx_a = 0.95;
-     gfx_line(0, cy, w, cy, 0);
-   );
+// ---- Zero line (hidden in small mode) --------------
+    small_mode ? 0 : (
+      gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.65; gfx_a = 0.95;
+      gfx_line(0, cy, w, cy, 0);
+    );
 
-   // ---- Axis labels (hidden in small mode) -------------
+// ---- Per-band L/R Energy markers ----
+    show_lr_energy ? (
+    gfx_r = 1.0; gfx_g = 1.0; gfx_b = 1.0; gfx_a = 0.60;
+    small_mode ? (
+      mark_w = 1; mark_h = 1;
+    ) : (
+      mark_w = 4; mark_h = 3;
+    );
+    i = 0;
+    loop(64,
+      el = mem_ens[i];
+      er = mem_ensr[i];
+      el > 0.0000000001 || er > 0.0000000001 ? (
+        total_e = el + er;
+        total_e > 0 ? ratio = er / total_e : ratio = 0.5;
+        target_y = ratio * h;
+        target_y = max(1, min(h - 1, target_y));
+        bx = floor(i * bw);
+        bx + mark_w < w ? gfx_rect(bx, target_y - floor(mark_h/2), mark_w, mark_h) : 0;
+      );
+      i += 1;
+    );
+    );
+
+    // ---- Axis labels (hidden in small mode) -------------
    small_mode ? 0 : (
      gfx_setfont(1, "Arial", 9);
      gfx_r = 0.45; gfx_g = 0.55; gfx_b = 0.65; gfx_a = 1.0;
