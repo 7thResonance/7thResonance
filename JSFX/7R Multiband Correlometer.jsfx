@@ -1,8 +1,8 @@
 desc:7R Multiband Correlometer
 author:7thResonance
-version: 1.1
+version: 1.2
 about: A simple Multiband Correlometer
-changelog: - changed default size
+changelog: - removed avging to 32 bands
 options:no_meter
 
 // -------------------------------------------------------
@@ -12,9 +12,6 @@ options:no_meter
 //  +1 = in-phase (mono-compatible)
 //   0 = uncorrelated
 //  -1 = anti-phase
-//
-//  Full mode : 64 bands, grid lines, freq markers, peak ticks
-//  Small mode: 32 bands (pairs averaged), bars only
 // -------------------------------------------------------
 options:gfx_hz=63 
 @init
@@ -22,10 +19,10 @@ options:gfx_hz=63
   gfx_ext_retina == 0 ? gfx_ext_retina = 1;
   gfx_ext_flags |= 0x100 | 0x200;
 
-  fft_size  = 8192;   // must be a power of 2
-  num_bands = 64;     // always compute 64 bands; small mode averages to 32
-  hop_size  = fft_size / 4;   // 75% overlap -> 4x update rate
-  nyq       = fft_size / 2;
+   fft_size  = 8192;   // must be a power of 2
+   num_bands = 64;
+   hop_size  = fft_size / 4;   // 75% overlap -> 4x update rate
+   nyq       = fft_size / 2;
 
   // ---- memory layout ----------------------------------
   mem_l    = 0;               // [fft_size]   raw left input
@@ -171,7 +168,7 @@ options:gfx_hz=63
 
 @gfx 640 400
 
-  // Detect small/embedded mode - matches spectrum analyser convention
+  // Detect small/embedded mode
   small_mode = gfx_w < 200 * gfx_ext_retina || gfx_h < 50 * gfx_ext_retina;
 
   gfx_w > 0 && gfx_h > 0 ? (
@@ -181,148 +178,137 @@ options:gfx_hz=63
   cy = floor(h * 0.5 + 0.5);
   hh = cy - 2;   // usable half-height in pixels
 
-  // Display bands: 64 in full mode, 32 in small mode (adjacent pairs averaged)
-  display_bands = small_mode ? 32 : 64;
+  display_bands = 64;
   bw = w / display_bands;
 
   // ---- Background -------------------------------------
   gfx_r = 0.06; gfx_g = 0.06; gfx_b = 0.10; gfx_a = 1;
   gfx_rect(0, 0, w, h);
 
-  // ---- Correlation grid lines (full mode only) --------
-  small_mode ? 0 : (
-    gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.30; gfx_a = 1;
-    gfx_line(0, 1,         w, 1,         0);
-    gfx_line(0, h-2,       w, h-2,       0);
-    gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.21;
-    gfx_line(0, cy - hh/2, w, cy - hh/2, 0);
-    gfx_line(0, cy + hh/2, w, cy + hh/2, 0);
-  );
+   // ---- Correlation grid lines (hidden in small mode) --------
+   small_mode ? 0 : (
+     gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.30; gfx_a = 1;
+     gfx_line(0, 1,         w, 1,         0);
+     gfx_line(0, h-2,       w, h-2,       0);
+     gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.21;
+     gfx_line(0, cy - hh/2, w, cy - hh/2, 0);
+     gfx_line(0, cy + hh/2, w, cy + hh/2, 0);
+   );
 
-  // ---- Frequency grid (full mode only) ----------------
-  // Vertical lines + labels at standard frequency markers.
-  // X position: log(freq * fft_size / srate) / log_nyq * w
-  small_mode ? 0 : (
-    gfx_setfont(1, "Arial", 9);
+   // ---- Frequency grid (hidden in small mode) ----------------
+   small_mode ? 0 : (
+     gfx_setfont(1, "Arial", 9);
 
-    freq_mark_n = 9;
-    freq_mark_0 = 50;
-    freq_mark_1 = 100;
-    freq_mark_2 = 200;
-    freq_mark_3 = 500;
-    freq_mark_4 = 1000;
-    freq_mark_5 = 2000;
-    freq_mark_6 = 5000;
-    freq_mark_7 = 10000;
-    freq_mark_8 = 20000;
+  freq_mark_n = 9;
+  freq_mark_0 = 50;
+  freq_mark_1 = 100;
+  freq_mark_2 = 200;
+  freq_mark_3 = 500;
+  freq_mark_4 = 1000;
+  freq_mark_5 = 2000;
+  freq_mark_6 = 5000;
+  freq_mark_7 = 10000;
+  freq_mark_8 = 20000;
 
-    fm_i = 0;
-    loop(freq_mark_n,
-      fm_i == 0 ? fm_f = freq_mark_0 :
-      fm_i == 1 ? fm_f = freq_mark_1 :
-      fm_i == 2 ? fm_f = freq_mark_2 :
-      fm_i == 3 ? fm_f = freq_mark_3 :
-      fm_i == 4 ? fm_f = freq_mark_4 :
-      fm_i == 5 ? fm_f = freq_mark_5 :
-      fm_i == 6 ? fm_f = freq_mark_6 :
-      fm_i == 7 ? fm_f = freq_mark_7 :
-                  fm_f = freq_mark_8;
+  fm_i = 0;
+  loop(freq_mark_n,
+    fm_i == 0 ? fm_f = freq_mark_0 :
+    fm_i == 1 ? fm_f = freq_mark_1 :
+    fm_i == 2 ? fm_f = freq_mark_2 :
+    fm_i == 3 ? fm_f = freq_mark_3 :
+    fm_i == 4 ? fm_f = freq_mark_4 :
+    fm_i == 5 ? fm_f = freq_mark_5 :
+    fm_i == 6 ? fm_f = freq_mark_6 :
+    fm_i == 7 ? fm_f = freq_mark_7 :
+                fm_f = freq_mark_8;
 
-      fm_bin = fm_f * fft_size / srate;
-      fm_bin >= 1 && fm_bin <= nyq ? (
-        fm_x = floor(log(fm_bin) / log_nyq * w);
+    fm_bin = fm_f * fft_size / srate;
+    fm_bin >= 1 && fm_bin <= nyq ? (
+      fm_x = floor(log(fm_bin) / log_nyq * w);
 
-        gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.35; gfx_a = 1;
-        gfx_line(fm_x, 0, fm_x, h, 0);
+      gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.35; gfx_a = 1;
+      gfx_line(fm_x, 0, fm_x, h, 0);
 
-        fm_f >= 1000 ? (
-          sprintf(#fm_label, "%dk", fm_f / 1000);
-        ) : (
-          sprintf(#fm_label, "%d", fm_f);
-        );
-
-        gfx_measurestr(#fm_label, fm_lw, fm_lh);
-        gfx_r = 0.35; gfx_g = 0.40; gfx_b = 0.55; gfx_a = 1;
-        gfx_x = fm_x - floor(fm_lw / 2);
-        gfx_x < 1 ? gfx_x = 1;
-        gfx_x + fm_lw > w - 1 ? gfx_x = w - fm_lw - 1;
-        gfx_y = h - fm_lh - 2;
-        gfx_drawstr(#fm_label);
+      fm_f >= 1000 ? (
+        sprintf(#fm_label, "%dk", fm_f / 1000);
+      ) : (
+        sprintf(#fm_label, "%d", fm_f);
       );
 
-      fm_i += 1;
+      gfx_measurestr(#fm_label, fm_lw, fm_lh);
+      gfx_r = 0.35; gfx_g = 0.40; gfx_b = 0.55; gfx_a = 1;
+      gfx_x = fm_x - floor(fm_lw / 2);
+      gfx_x < 1 ? gfx_x = 1;
+      gfx_x + fm_lw > w - 1 ? gfx_x = w - fm_lw - 1;
+      gfx_y = h - fm_lh - 2;
+      gfx_drawstr(#fm_label);
     );
-  );
+
+     fm_i += 1;
+   );
+   ); // end frequency grid conditional
 
   // ---- Bars -------------------------------------------
-  // Full mode: draw all 64 bands directly.
-  // Small mode: draw 32 bars, each the average of two adjacent bands.
-  i = 0;
-  loop(display_bands,
-    // Get correlation value for this display bar
-    small_mode ? (
-      // Average adjacent pair from the 64-band data
-      c = (mem_corr[i*2] + mem_corr[i*2+1]) * 0.5;
-    ) : (
-      c = mem_corr[i];
-    );
+   // Always draw all 64 bands; only UI elements are reduced in small mode.
+   i = 0;
+   loop(64,
+     c = mem_corr[i];
 
-    bx    = floor(i * bw);
-    bw_px = floor((i+1) * bw) - bx;
-    bar_h = floor(c * hh);
+     bx    = floor(i * bw);
+     bw_px = floor((i+1) * bw) - bx;
+     bar_h = floor(c * hh);
 
-    // Colour: blue for positive, pink for negative
-    c >= 0 ? (
-      t = c;
-      gfx_r = 0.10 + t * 0.10;
-      gfx_g = 0.25 + t * 0.20;
-      gfx_b = 0.70 + t * 0.30;
-    ) : (
-      t = -c;
-      gfx_r = 0.90 + t * 0.10;
-      gfx_g = 0.10 + t * 0.20;
-      gfx_b = 0.55 + t * 0.35;
-    );
-    gfx_a = 0.60 + abs(c) * 0.40;
+     // Colour: blue for positive, pink for negative
+     c >= 0 ? (
+       t = c;
+       gfx_r = 0.10 + t * 0.10;
+       gfx_g = 0.25 + t * 0.20;
+       gfx_b = 0.70 + t * 0.30;
+     ) : (
+       t = -c;
+       gfx_r = 0.90 + t * 0.10;
+       gfx_g = 0.10 + t * 0.20;
+       gfx_b = 0.55 + t * 0.35;
+     );
+     gfx_a = 0.60 + abs(c) * 0.40;
 
-    bar_h > 0 ? (
-      gfx_rect(bx, cy - bar_h, bw_px, bar_h);
-    ) : bar_h < 0 ? (
-      gfx_rect(bx, cy,         bw_px, -bar_h);
-    );
+     bar_h > 0 ? (
+       gfx_rect(bx, cy - bar_h, bw_px, bar_h);
+     ) : bar_h < 0 ? (
+       gfx_rect(bx, cy,         bw_px, -bar_h);
+     );
 
-    // ---- Peak tick (full mode only) -------------------
-    small_mode ? 0 : (
-      pk = mem_peak[i];
-      abs(pk) > 0.015 ? (
-        pk_y = cy - floor(pk * hh);
-        pk >= 0 ? (
-          gfx_r = 0.30; gfx_g = 0.60; gfx_b = 1.00;
-        ) : (
-          gfx_r = 1.00; gfx_g = 0.20; gfx_b = 0.70;
-        );
-        gfx_a = 0.90;
-        gfx_line(bx, pk_y, bx + bw_px - 1, pk_y, 0);
-      );
-    );
+     // ---- Peak tick (hidden in small mode) -------------
+     small_mode ? 0 : (
+       pk = mem_peak[i];
+       abs(pk) > 0.015 ? (
+         pk_y = cy - floor(pk * hh);
+         pk >= 0 ? (
+           gfx_r = 0.30; gfx_g = 0.60; gfx_b = 1.00;
+         ) : (
+           gfx_r = 1.00; gfx_g = 0.20; gfx_b = 0.70;
+         );
+         gfx_a = 0.90;
+         gfx_line(bx, pk_y, bx + bw_px - 1, pk_y, 0);
+       );
+     );
 
-    i += 1;
-  );
+      i += 1;
+     );
 
-  // ---- Zero line (full mode only) ---------------------
-  small_mode ? 0 : (
-    gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.65; gfx_a = 0.95;
-    gfx_line(0, cy, w, cy, 0);
-  );
+   // ---- Zero line (hidden in small mode) --------------
+   small_mode ? 0 : (
+     gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.65; gfx_a = 0.95;
+     gfx_line(0, cy, w, cy, 0);
+   );
 
-  // ---- Axis labels (full mode only) -------------------
-  small_mode ? 0 : (
-    gfx_setfont(1, "Arial", 9);
-    gfx_r = 0.45; gfx_g = 0.55; gfx_b = 0.65; gfx_a = 1.0;
-    gfx_x = 3;  gfx_y = 3;       gfx_drawstr("+1");
-    gfx_x = 3;  gfx_y = cy - 6;  gfx_drawstr(" 0");
-    gfx_x = 3;  gfx_y = h - 13;  gfx_drawstr("-1");
-  );
+   // ---- Axis labels (hidden in small mode) -------------
+   small_mode ? 0 : (
+     gfx_setfont(1, "Arial", 9);
+     gfx_r = 0.45; gfx_g = 0.55; gfx_b = 0.65; gfx_a = 1.0;
+     gfx_x = 3;  gfx_y = 3;       gfx_drawstr("+1");
+     gfx_x = 3;  gfx_y = cy - 6;  gfx_drawstr(" 0");
+     gfx_x = 3;  gfx_y = h - 13;  gfx_drawstr("-1");
+   );
 
-  ); // end bounds check
-
+   ); // end bounds check
