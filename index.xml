@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="465f66719f0f6d86defe122cb00eb02a6d534ebc">
+<index version="1" name="7thResonance" commit="fa76258ed2ea80383f0baeb7de7851c584b25b60">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -43,6 +43,10 @@
       <version name="1.1" author="7thResonance" time="2026-04-20T07:47:32Z">
         <changelog><![CDATA[- changed default size]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/465f66719f0f6d86defe122cb00eb02a6d534ebc/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
+      </version>
+      <version name="1.2" author="7thResonance" time="2026-04-20T08:51:43Z">
+        <changelog><![CDATA[- removed avging to 32 bands]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/fa76258ed2ea80383f0baeb7de7851c584b25b60/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Oscilloscope.jsfx" type="effect" desc="7R Oscilloscope">
