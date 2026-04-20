@@ -1,7 +1,8 @@
 desc:7R Multiband Correlometer
 author:7thResonance
-version: 1.0
+version: 1.1
 about: A simple Multiband Correlometer
+changelog: - changed default size
 options:no_meter
 
 // -------------------------------------------------------
@@ -168,7 +169,7 @@ options:gfx_hz=63
   ); // end buf_pos >= fft_size
 
 
-@gfx 640 320
+@gfx 640 400
 
   // Detect small/embedded mode - matches spectrum analyser convention
   small_mode = gfx_w < 200 * gfx_ext_retina || gfx_h < 50 * gfx_ext_retina;

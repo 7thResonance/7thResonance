@@ -1,7 +1,7 @@
 --[[
 desc:7R Multiband Correlometer
 author:7thResonance
-version: 1.0
+version: 1.1
 about: A simple Multiband Correlometer
 @provides [effect] JSFX\7R Multiband Correlometer.jsfx
 --]]
