@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="3e4e04aee104cccb6a2dedd0d04130be6ca5cb13">
+<index version="1" name="7thResonance" commit="4c5263a09e61fea0bca771434db7359c7093c61c">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -27,6 +27,20 @@
     </reapack>
   </category>
   <category name="JSFX">
+    <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 A simple Multiband Correlometer\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="7thResonance" time="2026-04-20T07:43:49Z">
+        <source>https://github.com/7thResonance/7thResonance/raw/4c5263a09e61fea0bca771434db7359c7093c61c/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
+      </version>
+    </reapack>
     <reapack name="7R Oscilloscope.jsfx" type="effect" desc="7R Oscilloscope">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
