@@ -28,14 +28,11 @@ namespace {
 
 constexpr int kRecFxFlag = 0x1000000;
 constexpr int kContainerFxFlag = 0x2000000;
-constexpr DWORD kTrackDeltaFlushIntervalMs = 20;
-constexpr DWORD kSuppressionEntryLifetimeMs = 1000;
-constexpr DWORD kParamEditReleaseIdleMs = 175;
-constexpr DWORD kSendEditReleaseIdleMs = 650;
-constexpr DWORD kSendEditKeepAliveMs = 80;
-constexpr DWORD kSendParamResyncIntervalMs = 250;
-constexpr int kImmediateTrackDeltaFlushTrackThreshold = 8;
-constexpr bool kTrackDeltaFlushImmediately = true;
+constexpr DWORD kValueFlushIntervalMs = 20;
+constexpr DWORD kParamEditReleaseIdleMs = 50;
+constexpr DWORD kSendEditReleaseIdleMs = 50;
+constexpr DWORD kSendEditKeepAliveMs = 50;
+constexpr DWORD kSendParamResyncIntervalMs = 50;
 constexpr bool kDebugTouchState = false;
 constexpr const char kExtStateSection[] = "7R_FX_AND_SEND_SYNC";
 constexpr const char kExtStateKeyFxSyncEnabled[] = "fx_sync_enabled";
@@ -253,9 +250,9 @@ struct FxState {
   bool offline {};
 };
 
-struct SuppressedWrite {
-  int pending_callbacks {};
-  DWORD expires_at {};
+struct PendingValueChange {
+  double old_value {};
+  double new_value {};
 };
 
 struct TrackSendParamState {
@@ -326,9 +323,8 @@ static gaccel_register_t g_action = {{0, 0, 0}, kToggleCommandDesc};
 static gaccel_register_t g_send_action = {{0, 0, 0}, kSendToggleCommandDesc};
 
 static std::unordered_map<TrackParamKey, double, TrackParamKeyHash> g_track_param_snapshot;
-static std::unordered_map<TrackParamKey, double, TrackParamKeyHash> g_pending_track_param_deltas;
-static std::unordered_map<TrackParamKey, SuppressedWrite, TrackParamKeyHash>
-    g_suppressed_track_param_writes;
+static std::unordered_map<TrackParamKey, PendingValueChange, TrackParamKeyHash>
+    g_pending_track_param_deltas;
 static std::unordered_map<TrackParamKey, DWORD, TrackParamKeyHash>
     g_track_source_activity_ticks;
 static std::unordered_map<TrackParamKey, ActiveTrackParamEdit, TrackParamKeyHash>
@@ -343,6 +339,10 @@ static FocusedItemFx g_focused_item_fx;
 static std::unordered_map<int, double> g_item_param_snapshot;
 static std::unordered_map<TrackSendKey, TrackSendParamState, TrackSendKeyHash>
     g_track_send_param_snapshot;
+static std::unordered_map<TrackSendKey, PendingValueChange, TrackSendKeyHash>
+    g_pending_send_volume_deltas;
+static std::unordered_map<TrackSendKey, PendingValueChange, TrackSendKeyHash>
+    g_pending_send_pan_deltas;
 static std::unordered_map<TrackSendKey, TrackSendState, TrackSendKeyHash>
     g_track_send_state_snapshot;
 static std::unordered_map<TrackSendKey, StableSendLink, TrackSendKeyHash>
@@ -353,10 +353,6 @@ static std::unordered_map<TrackSendKey, std::vector<MediaTrack*>, TrackSendKeyHa
     g_send_peer_track_cache;
 static std::unordered_map<SendLookupKey, int, SendLookupKeyHash>
     g_send_lookup_index;
-static std::unordered_map<TrackSendKey, SuppressedWrite, TrackSendKeyHash>
-    g_suppressed_send_volume_writes;
-static std::unordered_map<TrackSendKey, SuppressedWrite, TrackSendKeyHash>
-    g_suppressed_send_pan_writes;
 static std::unordered_map<TrackSendKey, DWORD, TrackSendKeyHash>
     g_send_source_activity_ticks;
 static std::unordered_map<TrackSendKey, ActiveSendEdit, TrackSendKeyHash>
@@ -371,7 +367,8 @@ static std::unordered_map<TrackFxTargetCacheKey, int, TrackFxTargetCacheKeyHash>
     g_track_fx_target_index_cache;
 static DWORD g_last_send_source_activity_tick = 0;
 static DWORD g_last_send_param_resync_tick = 0;
-static DWORD g_last_track_delta_flush_tick = 0;
+static DWORD g_track_delta_window_start_tick = 0;
+static DWORD g_send_delta_window_start_tick = 0;
 
 struct ScopedInternalChange {
   ScopedInternalChange() { ++g_internal_change_depth; }
@@ -387,6 +384,18 @@ void DebugTouchLog(const char* fmt, ...) {
   va_end(args);
   ShowConsoleMsg(buf);
   ShowConsoleMsg("\n");
+}
+
+template <typename PendingMap, typename Key>
+void QueuePendingValueChange(PendingMap* pending,
+                             const Key& key,
+                             const double old_value,
+                             const double new_value) {
+  if (!pending) return;
+  const auto inserted = pending->emplace(key, PendingValueChange{old_value, new_value});
+  if (!inserted.second) {
+    inserted.first->second.new_value = new_value;
+  }
 }
 
 bool ParseExtStateBool(const char* text) {
@@ -967,50 +976,6 @@ int FindCachedStableMatchingSendIndex(const TrackSendKey& source_key,
   return matched_index;
 }
 
-using SuppressedSendMap = std::unordered_map<TrackSendKey, SuppressedWrite, TrackSendKeyHash>;
-
-void CleanupSuppressedSendWrites(SuppressedSendMap* writes) {
-  if (!writes || writes->empty()) return;
-  const DWORD now = GetTickCount();
-  for (auto it = writes->begin(); it != writes->end();) {
-    if (static_cast<int>(now - it->second.expires_at) >= 0) {
-      it = writes->erase(it);
-    } else {
-      ++it;
-    }
-  }
-}
-
-void MarkSuppressedSendWrite(SuppressedSendMap* writes, const TrackSendKey& key) {
-  if (!writes) return;
-  auto& entry = (*writes)[key];
-  ++entry.pending_callbacks;
-  entry.expires_at = GetTickCount() + kSuppressionEntryLifetimeMs;
-}
-
-bool ConsumeSuppressedSendWrite(SuppressedSendMap* writes, const TrackSendKey& key) {
-  if (!writes) return false;
-  const auto it = writes->find(key);
-  if (it == writes->end()) return false;
-
-  const DWORD now = GetTickCount();
-  if (static_cast<int>(now - it->second.expires_at) >= 0) {
-    writes->erase(it);
-    return false;
-  }
-
-  if (it->second.pending_callbacks <= 0) {
-    writes->erase(it);
-    return false;
-  }
-
-  --it->second.pending_callbacks;
-  if (it->second.pending_callbacks == 0) {
-    writes->erase(it);
-  }
-  return true;
-}
-
 void NoteSendSourceActivity(const TrackSendKey& source_key) {
   const DWORD now = GetTickCount();
   g_send_source_activity_ticks[source_key] = now;
@@ -1051,7 +1016,6 @@ void KeepSendEditsAlive() {
 
       const double current = GetTrackSendInfo_Value(target.track, 0, target.send_index, "D_VOL");
       ScopedInternalChange guard;
-      MarkSuppressedSendWrite(&g_suppressed_send_volume_writes, target);
       SetTrackSendVolumeForAutomation(target.track, target.send_index, current, 0);
       edit.last_keepalive_tick = now;
     }
@@ -1074,7 +1038,6 @@ void KeepSendEditsAlive() {
 
       const double current = GetTrackSendInfo_Value(target.track, 0, target.send_index, "D_PAN");
       ScopedInternalChange guard;
-      MarkSuppressedSendWrite(&g_suppressed_send_pan_writes, target);
       SetTrackSendPanForAutomation(target.track, target.send_index, current, 0);
       edit.last_keepalive_tick = now;
     }
@@ -1219,7 +1182,6 @@ void PropagateSendVolumeDelta(MediaTrack* source_track,
     const TrackSendKey key{track, target_send_index};
     auto& state = g_track_send_param_snapshot[key];
     state.volume = updated;
-    MarkSuppressedSendWrite(&g_suppressed_send_volume_writes, key);
     MarkSendVolumeEditActive(key, source_key);
   }
 }
@@ -1253,7 +1215,6 @@ void PropagateSendPanDelta(MediaTrack* source_track, const int send_index, const
     const TrackSendKey key{track, target_send_index};
     auto& state = g_track_send_param_snapshot[key];
     state.pan = updated;
-    MarkSuppressedSendWrite(&g_suppressed_send_pan_writes, key);
     MarkSendPanEditActive(key, source_key);
   }
 }
@@ -1262,10 +1223,6 @@ void HandleSendVolumeDelta(MediaTrack* source_track, const int send_index, const
   if (!g_send_enabled || !source_track || send_index < 0) return;
 
   const TrackSendKey key{source_track, send_index};
-  if (ConsumeSuppressedSendWrite(&g_suppressed_send_volume_writes, key)) {
-    g_track_send_param_snapshot[key].volume = new_value;
-    return;
-  }
   if (IsTrackTrimReadMode(source_track)) {
     NoteSendSourceActivity(key);
   }
@@ -1284,17 +1241,16 @@ void HandleSendVolumeDelta(MediaTrack* source_track, const int send_index, const
   const double old_value = existing->second.volume;
   if (new_value == old_value) return;
   existing->second.volume = new_value;
-  PropagateSendVolumeDelta(source_track, send_index, old_value, new_value);
+  QueuePendingValueChange(&g_pending_send_volume_deltas, key, old_value, new_value);
+  if (g_send_delta_window_start_tick == 0) {
+    g_send_delta_window_start_tick = GetTickCount();
+  }
 }
 
 void HandleSendPanDelta(MediaTrack* source_track, const int send_index, const double new_value) {
   if (!g_send_enabled || !source_track || send_index < 0) return;
 
   const TrackSendKey key{source_track, send_index};
-  if (ConsumeSuppressedSendWrite(&g_suppressed_send_pan_writes, key)) {
-    g_track_send_param_snapshot[key].pan = new_value;
-    return;
-  }
   if (IsTrackTrimReadMode(source_track)) {
     NoteSendSourceActivity(key);
   }
@@ -1310,10 +1266,53 @@ void HandleSendPanDelta(MediaTrack* source_track, const int send_index, const do
     return;
   }
 
-  const double delta = new_value - existing->second.pan;
+  const double old_value = existing->second.pan;
+  const double delta = new_value - old_value;
   if (delta == 0.0) return;
   existing->second.pan = new_value;
-  PropagateSendPanDelta(source_track, send_index, delta);
+  QueuePendingValueChange(&g_pending_send_pan_deltas, key, old_value, new_value);
+  if (g_send_delta_window_start_tick == 0) {
+    g_send_delta_window_start_tick = GetTickCount();
+  }
+}
+
+void FlushSendParamDeltas(const bool force = false) {
+  if (!g_send_enabled || g_internal_change_depth > 0) return;
+  if (g_pending_send_volume_deltas.empty() && g_pending_send_pan_deltas.empty()) {
+    g_send_delta_window_start_tick = 0;
+    return;
+  }
+
+  const DWORD now = GetTickCount();
+  if (!force) {
+    if (g_send_delta_window_start_tick == 0) {
+      g_send_delta_window_start_tick = now;
+      return;
+    }
+    if (static_cast<int>(now - g_send_delta_window_start_tick) <
+        static_cast<int>(kValueFlushIntervalMs)) {
+      return;
+    }
+  }
+
+  auto pending_volume = std::move(g_pending_send_volume_deltas);
+  auto pending_pan = std::move(g_pending_send_pan_deltas);
+  g_pending_send_volume_deltas.clear();
+  g_pending_send_pan_deltas.clear();
+  g_send_delta_window_start_tick = 0;
+
+  for (const auto& kv : pending_volume) {
+    const double old_value = kv.second.old_value;
+    const double new_value = kv.second.new_value;
+    if (new_value == old_value) continue;
+    PropagateSendVolumeDelta(kv.first.track, kv.first.send_index, old_value, new_value);
+  }
+
+  for (const auto& kv : pending_pan) {
+    const double delta = kv.second.new_value - kv.second.old_value;
+    if (delta == 0.0) continue;
+    PropagateSendPanDelta(kv.first.track, kv.first.send_index, delta);
+  }
 }
 
 void PropagateSendMuteState(MediaTrack* source_track, const int send_index, const bool muted) {
@@ -1367,10 +1366,11 @@ void SyncTrackSendStatesFromSelection() {
     ReleaseExpiredSendEdits(true);
     g_track_send_state_snapshot = std::move(current_snapshot);
     BuildTrackSendParamSnapshot(&g_track_send_param_snapshot);
+    g_pending_send_volume_deltas.clear();
+    g_pending_send_pan_deltas.clear();
+    g_send_delta_window_start_tick = 0;
     g_last_send_param_resync_tick = GetTickCount();
     RebuildStableSendLinks();
-    g_suppressed_send_volume_writes.clear();
-    g_suppressed_send_pan_writes.clear();
     return;
   }
 
@@ -1648,18 +1648,6 @@ int FindCachedTrackFxMatchIndex(MediaTrack* source_track,
   return target_fx_index;
 }
 
-bool ShouldFlushTrackParamDeltaImmediately() {
-  if (!kTrackDeltaFlushImmediately) return false;
-
-  int selected_count = CountSelectedTracks(nullptr);
-  MediaTrack* master_track = GetMasterTrack(nullptr);
-  if (master_track && IsTrackSelected(master_track)) {
-    ++selected_count;
-  }
-
-  return selected_count <= kImmediateTrackDeltaFlushTrackThreshold;
-}
-
 MediaItem_Take* ResolveFocusedItemTake(const FocusedItemFx& focused, MediaItem** item_out = nullptr) {
   if (!focused.IsValid()) return nullptr;
 
@@ -1727,7 +1715,6 @@ bool HasActiveParamEdits();
 void ResetSnapshots() {
   g_track_param_snapshot.clear();
   g_pending_track_param_deltas.clear();
-  g_suppressed_track_param_writes.clear();
   g_track_source_activity_ticks.clear();
   g_active_track_param_edits.clear();
   g_take_source_activity_ticks.clear();
@@ -1737,23 +1724,24 @@ void ResetSnapshots() {
   g_item_param_snapshot.clear();
   ClearTrackFxLookupCaches();
   g_focused_item_fx = FocusedItemFx();
-  g_last_track_delta_flush_tick = 0;
+  g_track_delta_window_start_tick = 0;
 }
 
 void ResetSendSnapshots() {
   g_track_send_param_snapshot.clear();
+  g_pending_send_volume_deltas.clear();
+  g_pending_send_pan_deltas.clear();
   g_track_send_state_snapshot.clear();
   g_stable_send_links.clear();
   g_send_lookup_index.clear();
   ClearSendTargetIndexCache();
   ClearSendPeerTrackCache();
-  g_suppressed_send_volume_writes.clear();
-  g_suppressed_send_pan_writes.clear();
   g_send_source_activity_ticks.clear();
   g_active_send_volume_edits.clear();
   g_active_send_pan_edits.clear();
   g_last_send_source_activity_tick = 0;
   g_last_send_param_resync_tick = 0;
+  g_send_delta_window_start_tick = 0;
 }
 
 bool HasActiveParamEdits() {
@@ -1771,47 +1759,6 @@ bool IsAutomationPlaybackDrivingTrackParam(MediaTrack* track,
   const bool playback = (env_state & 1) != 0;
   const bool writing = (env_state & 2) != 0;
   return playback && !writing;
-}
-
-void CleanupSuppressedWrites() {
-  if (g_suppressed_track_param_writes.empty()) return;
-  const DWORD now = GetTickCount();
-  for (auto it = g_suppressed_track_param_writes.begin();
-       it != g_suppressed_track_param_writes.end();) {
-    if (static_cast<int>(now - it->second.expires_at) >= 0) {
-      it = g_suppressed_track_param_writes.erase(it);
-    } else {
-      ++it;
-    }
-  }
-}
-
-void MarkSuppressedWrite(const TrackParamKey& key) {
-  auto& entry = g_suppressed_track_param_writes[key];
-  ++entry.pending_callbacks;
-  entry.expires_at = GetTickCount() + kSuppressionEntryLifetimeMs;
-}
-
-bool ConsumeSuppressedWrite(const TrackParamKey& key) {
-  const auto it = g_suppressed_track_param_writes.find(key);
-  if (it == g_suppressed_track_param_writes.end()) return false;
-
-  const DWORD now = GetTickCount();
-  if (static_cast<int>(now - it->second.expires_at) >= 0) {
-    g_suppressed_track_param_writes.erase(it);
-    return false;
-  }
-
-  if (it->second.pending_callbacks <= 0) {
-    g_suppressed_track_param_writes.erase(it);
-    return false;
-  }
-
-  --it->second.pending_callbacks;
-  if (it->second.pending_callbacks == 0) {
-    g_suppressed_track_param_writes.erase(it);
-  }
-  return true;
 }
 
 void NoteTrackSourceActivity(const TrackParamKey& source) {
@@ -1979,6 +1926,59 @@ void PropagateItemFxState(MediaItem_Take* source_take,
   }
 }
 
+void PropagateTrackFxParamChange(MediaTrack* source_track,
+                                 const int source_fx_index,
+                                 const int param_index,
+                                 const double source_old_value,
+                                 const double source_new_value) {
+  if (!source_track || source_fx_index < 0 || param_index < 0 ||
+      IsContainerFxIndex(source_fx_index)) {
+    return;
+  }
+  if (!IsTrackSelected(source_track)) return;
+
+  const double delta = source_new_value - source_old_value;
+  if (delta == 0.0) return;
+
+  const std::string fx_name =
+      GetTrackFxNameFromSnapshotOrLive(source_track, source_fx_index);
+  if (fx_name.empty()) return;
+
+  const bool rec_fx = IsRecFxIndex(source_fx_index);
+  const int source_instance =
+      GetTrackFxInstanceNumber(source_track, source_fx_index, fx_name);
+  if (source_instance <= 0) return;
+
+  const TrackParamKey source_key{source_track, source_fx_index, param_index};
+  const auto selected_tracks = GetSelectedTracksIncludingMaster();
+  ScopedInternalChange guard;
+  for (MediaTrack* track : selected_tracks) {
+    if (!track || track == source_track) continue;
+    const int target_fx_index =
+        FindCachedTrackFxMatchIndex(
+            source_track,
+            source_fx_index,
+            track,
+            fx_name,
+            source_instance,
+            rec_fx);
+    if (target_fx_index < 0) continue;
+
+    const double current_value =
+        TrackFX_GetParamNormalized(track, target_fx_index, param_index);
+    const double requested_value = Clamp01(current_value + delta);
+
+    if (!TrackFX_SetParamNormalized(track, target_fx_index, param_index, requested_value)) {
+      continue;
+    }
+
+    const TrackParamKey target_key{track, target_fx_index, param_index};
+    g_track_param_snapshot[target_key] =
+        TrackFX_GetParamNormalized(track, target_fx_index, param_index);
+    MarkTrackParamEditActive(target_key, source_key);
+  }
+}
+
 void HandleTrackFxParamDelta(MediaTrack* source_track,
                              const int source_fx_index,
                              const int param_index,
@@ -1988,94 +1988,56 @@ void HandleTrackFxParamDelta(MediaTrack* source_track,
   }
 
   const TrackParamKey key {source_track, source_fx_index, param_index};
-  if (ConsumeSuppressedWrite(key)) {
-    g_track_param_snapshot[key] = new_value;
-    return;
-  }
-
   const auto existing = g_track_param_snapshot.find(key);
   if (existing == g_track_param_snapshot.end()) {
     g_track_param_snapshot.emplace(key, new_value);
     return;
   }
 
-  const double delta = new_value - existing->second;
+  const double old_value = existing->second;
+  const double delta = new_value - old_value;
   existing->second = new_value;
   if (delta == 0.0) return;
   if (!IsTrackSelected(source_track)) return;
   if (IsAutomationPlaybackDrivingTrackParam(source_track, source_fx_index, param_index)) return;
 
   NoteTrackSourceActivity(key);
-  g_pending_track_param_deltas[key] += delta;
-  if (ShouldFlushTrackParamDeltaImmediately()) {
-    FlushTrackParamDeltas(true);
+  QueuePendingValueChange(&g_pending_track_param_deltas, key, old_value, new_value);
+  if (g_track_delta_window_start_tick == 0) {
+    g_track_delta_window_start_tick = GetTickCount();
   }
 }
 
 void FlushTrackParamDeltas(const bool force) {
   if (!g_enabled || g_internal_change_depth > 0) return;
-  if (g_pending_track_param_deltas.empty()) return;
-
-  const DWORD now = GetTickCount();
-  if (!force &&
-      g_last_track_delta_flush_tick != 0 &&
-      (now - g_last_track_delta_flush_tick) < kTrackDeltaFlushIntervalMs) {
+  if (g_pending_track_param_deltas.empty()) {
+    g_track_delta_window_start_tick = 0;
     return;
   }
-  g_last_track_delta_flush_tick = now;
+
+  const DWORD now = GetTickCount();
+  if (!force) {
+    if (g_track_delta_window_start_tick == 0) {
+      g_track_delta_window_start_tick = now;
+      return;
+    }
+    if (static_cast<int>(now - g_track_delta_window_start_tick) <
+        static_cast<int>(kValueFlushIntervalMs)) {
+      return;
+    }
+  }
 
   auto pending = std::move(g_pending_track_param_deltas);
   g_pending_track_param_deltas.clear();
+  g_track_delta_window_start_tick = 0;
 
-  const auto selected_tracks = GetSelectedTracksIncludingMaster();
-  if (selected_tracks.size() <= 1) return;
-
-  ScopedInternalChange guard;
   for (const auto& kv : pending) {
     const TrackParamKey& source_key = kv.first;
-    const double delta = kv.second;
-    if (delta == 0.0) continue;
-
-    MediaTrack* source_track = source_key.track;
-    const int source_fx_index = source_key.fx_index;
-    const int param_index = source_key.param_index;
-
-    if (!source_track || source_fx_index < 0 || param_index < 0 ||
-        IsContainerFxIndex(source_fx_index) || !IsTrackSelected(source_track)) {
-      continue;
-    }
-
-    const std::string fx_name =
-        GetTrackFxNameFromSnapshotOrLive(source_track, source_fx_index);
-    if (fx_name.empty()) continue;
-
-    const bool rec_fx = IsRecFxIndex(source_fx_index);
-    const int source_instance =
-        GetTrackFxInstanceNumber(source_track, source_fx_index, fx_name);
-    if (source_instance <= 0) continue;
-
-    for (MediaTrack* track : selected_tracks) {
-      if (!track || track == source_track) continue;
-      const int target_fx_index =
-          FindCachedTrackFxMatchIndex(
-              source_track,
-              source_fx_index,
-              track,
-              fx_name,
-              source_instance,
-              rec_fx);
-      if (target_fx_index < 0) continue;
-
-      const double current_value =
-          TrackFX_GetParamNormalized(track, target_fx_index, param_index);
-      const double new_target_value = Clamp01(current_value + delta);
-
-      const TrackParamKey target_key{track, target_fx_index, param_index};
-      g_track_param_snapshot[target_key] = new_target_value;
-      MarkSuppressedWrite(target_key);
-      TrackFX_SetParamNormalized(track, target_fx_index, param_index, new_target_value);
-      MarkTrackParamEditActive(target_key, source_key);
-    }
+    PropagateTrackFxParamChange(source_key.track,
+                                source_key.fx_index,
+                                source_key.param_index,
+                                kv.second.old_value,
+                                kv.second.new_value);
   }
 }
 
@@ -2313,6 +2275,7 @@ void SetSendEnabled(const bool enabled) {
   if (g_send_enabled == enabled) return;
 
   if (!enabled && g_send_enabled) {
+    FlushSendParamDeltas(true);
     ReleaseExpiredSendEdits(true);
   }
 
@@ -2357,7 +2320,6 @@ void TimerTick() {
   if (!g_enabled && !g_send_enabled) return;
 
   if (g_enabled) {
-    CleanupSuppressedWrites();
     FlushTrackParamDeltas();
     ReleaseExpiredParamEdits();
     SyncItemFxStates();
@@ -2365,9 +2327,8 @@ void TimerTick() {
   }
 
   if (g_send_enabled) {
-    CleanupSuppressedSendWrites(&g_suppressed_send_volume_writes);
-    CleanupSuppressedSendWrites(&g_suppressed_send_pan_writes);
     SyncTrackSendStatesFromSelection();
+    FlushSendParamDeltas();
     KeepSendEditsAlive();
     ReleaseExpiredSendEdits();
   }
@@ -2384,13 +2345,14 @@ public:
     if (g_enabled) {
       g_track_param_snapshot.clear();
       g_pending_track_param_deltas.clear();
-      g_suppressed_track_param_writes.clear();
+      g_track_delta_window_start_tick = 0;
       SyncTrackFxStatesFromSelection();
       CreateTrackParamSnapshot();
     }
     if (g_send_enabled) {
-      g_suppressed_send_volume_writes.clear();
-      g_suppressed_send_pan_writes.clear();
+      g_pending_send_volume_deltas.clear();
+      g_pending_send_pan_deltas.clear();
+      g_send_delta_window_start_tick = 0;
       CreateTrackSendSnapshots();
     }
   }
@@ -2401,13 +2363,14 @@ public:
     if (g_enabled) {
       g_track_param_snapshot.clear();
       g_pending_track_param_deltas.clear();
-      g_suppressed_track_param_writes.clear();
+      g_track_delta_window_start_tick = 0;
       SyncTrackFxStatesFromSelection();
       CreateTrackParamSnapshot();
     }
     if (g_send_enabled) {
-      g_suppressed_send_volume_writes.clear();
-      g_suppressed_send_pan_writes.clear();
+      g_pending_send_volume_deltas.clear();
+      g_pending_send_pan_deltas.clear();
+      g_send_delta_window_start_tick = 0;
       CreateTrackSendSnapshots();
     }
   }
@@ -2481,7 +2444,7 @@ public:
 
         g_track_param_snapshot.clear();
         g_pending_track_param_deltas.clear();
-        g_suppressed_track_param_writes.clear();
+        g_track_delta_window_start_tick = 0;
         SyncTrackFxStatesFromSelection();
         CreateTrackParamSnapshot();
         return 0;
