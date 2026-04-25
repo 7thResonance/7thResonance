@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="ae3a903e132559b174a00b23a09cce992d17a0bf">
+<index version="1" name="7thResonance" commit="69742a96051ce2d4f5b2ad9ec30b3bea58ee40b4">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -333,6 +333,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="0.4" author="7thResonance" time="2026-04-10T01:22:28Z">
         <changelog><![CDATA[- Improved overall performance.]]></changelog>
         <source type="extension" file="reaper_7R_FX_and_Send_Sync.dll">https://github.com/7thResonance/7thResonance/raw/2a312073bb2888a347df592c67d7404646a438c8/UserPlugins/reaper_7R_FX_and_Send_Sync.dll</source>
+      </version>
+      <version name="0.5" author="7thResonance" time="2026-04-25T08:21:58Z">
+        <changelog><![CDATA[- Made things simpler and tighter timng.]]></changelog>
+        <source type="extension" file="reaper_7R_FX_and_Send_Sync.dll">https://github.com/7thResonance/7thResonance/raw/69742a96051ce2d4f5b2ad9ec30b3bea58ee40b4/UserPlugins/reaper_7R_FX_and_Send_Sync.dll</source>
       </version>
     </reapack>
   </category>
