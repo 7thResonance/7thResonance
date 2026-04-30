@@ -1,8 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.18
+version: 1.19
 about: A simple K meter JSFX
-changelog:  - moved crest factor read out value
+changelog:  - added peak over display
 options:no_meter
 
 
@@ -22,6 +22,7 @@ slider10:0<-120,48,1>Red Starts At (K)
 slider11:1<0,1,1{Off,On}>Show Peak High Line
 slider12:1<0,1,1{Off,On}>Show RMS High Line
 slider13:1<0,1,1{Off,On}>Show Crest/Dynamics
+slider14:0<-60,24,0.1>Max Peak (dBFS)
 
 //------------------------------------------------
 // Constants
@@ -59,6 +60,12 @@ silence_count_l = 0;
 silence_count_r = 0;
 vis_alpha_l = 0;
 vis_alpha_r = 0;
+over_readout_l = 0;
+over_readout_r = 0;
+over_count_l = 0;
+over_count_r = 0;
+over_alpha_l = 0;
+over_alpha_r = 0;
 last_sr = 0;
 
 f1a1 = f1a2 = f1b0 = f1b1 = f1b2 = 0;
@@ -210,6 +217,41 @@ tail_decay_tc = 0; // fastest possible tail: immediate drop after hold
 peak_in_l = abs(spl0);
 peak_in_r = abs(spl1);
 silence_instant_thresh = 0.00000000000000016; // instant silence detect below about -316 dBFS
+
+over_fade_samples = max(2 * srate, 1);
+over_limit_db = slider14;
+over_limit_amp = pow(10, over_limit_db / 20);
+over_peak_db_l = 20 * log10(max(peak_in_l, EPS));
+over_peak_db_r = 20 * log10(max(peak_in_r, EPS));
+
+peak_in_l > over_limit_amp ? (
+    (over_count_l <= 0 || over_peak_db_l > over_readout_l) ? (
+        over_readout_l = over_peak_db_l;
+    );
+    over_count_l = over_fade_samples;
+) : (
+    over_count_l > 0 ? (
+        over_count_l -= 1;
+    ) : (
+        over_readout_l = 0;
+    );
+);
+
+peak_in_r > over_limit_amp ? (
+    (over_count_r <= 0 || over_peak_db_r > over_readout_r) ? (
+        over_readout_r = over_peak_db_r;
+    );
+    over_count_r = over_fade_samples;
+) : (
+    over_count_r > 0 ? (
+        over_count_r -= 1;
+    ) : (
+        over_readout_r = 0;
+    );
+);
+
+over_alpha_l = max(over_count_l, 0) / over_fade_samples;
+over_alpha_r = max(over_count_r, 0) / over_fade_samples;
 
 silence_l = peak_in_l <= silence_instant_thresh;
 silence_r = peak_in_r <= silence_instant_thresh;
@@ -513,10 +555,12 @@ slider12 > 0 ? (
 );
 
 // ----- Peak lines (L/R) -----
-slider11 > 0 ? (
-    peak_y_l = floor(meter_bottom - (meter_h * peak_n_l) + 0.5) + 0.5;
-    peak_y_r = floor(meter_bottom - (meter_h * peak_n_r) + 0.5) + 0.5;
+peak_y_l = floor(meter_bottom - (meter_h * peak_n_l) + 0.5) + 0.5;
+peak_y_r = floor(meter_bottom - (meter_h * peak_n_r) + 0.5) + 0.5;
+over_on_scale_l = over_alpha_l > 0 && peak_k_l >= scale_min && peak_k_l <= scale_max;
+over_on_scale_r = over_alpha_r > 0 && peak_k_r >= scale_min && peak_k_r <= scale_max;
 
+slider11 > 0 ? (
     non_k_mode ?
         gfx_set(1.00, 0.90, 0.25, vis_alpha_l) :
     peak_k_l >= thresh_red ?
@@ -534,6 +578,27 @@ slider11 > 0 ? (
         gfx_set(1, 1, 0.3, vis_alpha_r) :
         gfx_set(0.25, 0.85, 0.25, vis_alpha_r);
     gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
+
+    over_on_scale_l ? (
+        gfx_set(1, 0, 0, over_alpha_l * 0.95);
+        gfx_line(meter_left, peak_y_l, meter_mid, peak_y_l);
+    );
+
+    over_on_scale_r ? (
+        gfx_set(1, 0, 0, over_alpha_r * 0.95);
+        gfx_line(meter_mid, peak_y_r, meter_right, peak_y_r);
+    );
+);
+
+// ----- Max peak over flash -----
+cap_h = max(floor(4 * gfx_ext_retina + 0.5), 2);
+over_alpha_l > 0 && !(slider11 > 0 && over_on_scale_l) ? (
+    gfx_set(1, 0, 0, over_alpha_l * 0.9);
+    gfx_rect(meter_left, meter_top, bar_w, cap_h);
+);
+over_alpha_r > 0 && !(slider11 > 0 && over_on_scale_r) ? (
+    gfx_set(1, 0, 0, over_alpha_r * 0.9);
+    gfx_rect(meter_mid, meter_top, bar_w, cap_h);
 );
 
 //------------------------------------------------
@@ -609,9 +674,9 @@ top_tick_needed ? (
 // Bottom Overlay Readout (L/R peak + RMS)
 //------------------------------------------------
 slider5 > 0 ? (
-    strcpy(#line2_lbl, " R ");
-    lufs_m_mode ? strcpy(#line2_lbl, " M ");
-    lufs_s_mode ? strcpy(#line2_lbl, " S ");
+    strcpy(#line2_lbl_draw, "R");
+    lufs_m_mode ? strcpy(#line2_lbl_draw, "M");
+    lufs_s_mode ? strcpy(#line2_lbl_draw, "S");
 
     disp_peak_db_l = silence_l ? -10000 : peak_db_l;
     disp_peak_db_r = silence_r ? -10000 : peak_db_r;
@@ -629,62 +694,86 @@ slider5 > 0 ? (
     disp_peak_db_r < -316 ? strcpy(#pk_r, "-inf") : sprintf(#pk_r, "%.1f", disp_peak_db_r);
     disp_rms_db_l  < -316 ? strcpy(#rm_l, "-inf") : sprintf(#rm_l, "%.1f", disp_rms_db_l);
     disp_rms_db_r  < -316 ? strcpy(#rm_r, "-inf") : sprintf(#rm_r, "%.1f", disp_rms_db_r);
+    sprintf(#ov_l, "%.1f", over_readout_l);
+    sprintf(#ov_r, "%.1f", over_readout_r);
 
-    readout_font = 13;
-    readout_gap = 6;
+    readout_font = 14;
     min_side_width = 4;
     font_fit = 0;
-    loop(2,
+    loop(3,
         gfx_setfont(2,"Arial",readout_font);
-        gfx_measurestr("P ", pk_lbl_w, pk_lbl_h);
-        strcpy(#line2_lbl_draw, #line2_lbl);
-        str_getchar(#line2_lbl_draw, 0) == 32 ? str_delsub(#line2_lbl_draw, 0, 1);
+        gfx_measurestr("00", readout_00_w, readout_space_h);
+        gfx_measurestr("0 0", readout_0s0_w, readout_space_h);
+        readout_space_w = max(readout_0s0_w - readout_00_w, 1);
+        gfx_measurestr("P", pk_lbl_w, pk_lbl_h);
         gfx_measurestr(#line2_lbl_draw, rm_lbl_w, rm_lbl_h);
         gfx_measurestr(#pk_l, pk_l_w, pk_l_h);
         gfx_measurestr(#pk_r, pk_r_w, pk_r_h);
         gfx_measurestr(#rm_l, rm_l_w, rm_l_h);
         gfx_measurestr(#rm_r, rm_r_w, rm_r_h);
 
-        peak_center_w = pk_lbl_w;
-        rms_center_w = rm_lbl_w;
-        peak_side_w = (meter_w - peak_center_w) * 0.5;
-        rms_side_w = (meter_w - rms_center_w) * 0.5;
+        peak_left_space = meter_mid - meter_left - pk_lbl_w * 0.5 - readout_space_w;
+        peak_right_space = meter_right - meter_mid - pk_lbl_w * 0.5 - readout_space_w;
+        rms_left_space = meter_mid - meter_left - rm_lbl_w * 0.5 - readout_space_w;
+        rms_right_space = meter_right - meter_mid - rm_lbl_w * 0.5 - readout_space_w;
         font_fit =
-            pk_l_w <= peak_side_w - min_side_width &&
-            pk_r_w <= peak_side_w - min_side_width &&
-            rm_l_w <= rms_side_w - min_side_width &&
-            rm_r_w <= rms_side_w - min_side_width;
+            pk_l_w <= peak_left_space - min_side_width &&
+            pk_r_w <= peak_right_space - min_side_width &&
+            rm_l_w <= rms_left_space - min_side_width &&
+            rm_r_w <= rms_right_space - min_side_width;
         font_fit || readout_font <= 11 ? break;
         readout_font -= 1;
     );
 
-    peak_lbl_x = meter_mid - pk_lbl_w * 0.5;
-    rms_lbl_x = meter_mid - rm_lbl_w * 0.5;
-    peak_left_limit = peak_lbl_x - readout_gap;
-    peak_right_x = peak_lbl_x + pk_lbl_w;
-    rms_left_limit = rms_lbl_x - readout_gap;
-    rms_right_x = rms_lbl_x + rm_lbl_w;
+    gfx_measurestr(#ov_l, ov_l_w, ov_l_h);
+    gfx_measurestr(#ov_r, ov_r_w, ov_r_h);
 
-    line_gap = 1;
+    // Over peak values at the top, one per channel.
+    over_top_y = floor(meter_top + cap_h + 1 + 0.5);
+    over_top_l_x = floor(meter_left + bar_w * 0.5 - ov_l_w * 0.5 + 0.5);
+    over_top_r_x = floor(meter_mid + bar_w * 0.5 - ov_r_w * 0.5 + 0.5);
+    over_alpha_l > 0 ? (
+        gfx_set(1, 1, 1, over_alpha_l);
+        gfx_x = over_top_l_x;
+        gfx_y = over_top_y;
+        gfx_drawstr(#ov_l);
+    );
+    over_alpha_r > 0 ? (
+        gfx_set(1, 1, 1, over_alpha_r);
+        gfx_x = over_top_r_x;
+        gfx_y = over_top_y;
+        gfx_drawstr(#ov_r);
+    );
+
+    readout_center_x = floor(meter_mid + 0.5);
+    peak_lbl_x = floor(readout_center_x - pk_lbl_w * 0.5 + 0.5);
+    rms_lbl_x = floor(readout_center_x - rm_lbl_w * 0.5 + 0.5);
+    peak_l_x = floor(peak_lbl_x - readout_space_w - pk_l_w + 0.5);
+    peak_r_x = floor(peak_lbl_x + pk_lbl_w + readout_space_w + 0.5);
+    rms_l_x = floor(rms_lbl_x - readout_space_w - rm_l_w + 0.5);
+    rms_r_x = floor(rms_lbl_x + rm_lbl_w + readout_space_w + 0.5);
+
+    line_gap = 2;
     line_h = max(pk_lbl_h, rm_lbl_h);
     line_h = max(line_h, max(pk_l_h, pk_r_h));
     line_h = max(line_h, max(rm_l_h, rm_r_h));
+    line_h = floor(line_h + 0.5);
 
     total_lines = 2;
     total_readout_h = total_lines * line_h + (total_lines - 1) * line_gap;
     y_peak = floor(meter_bottom - total_readout_h + 1 + 0.5);
     y_rms  = y_peak + line_h + line_gap;
-    strcpy(#pk_lbl_text, "P ");
+    strcpy(#pk_lbl_text, "P");
 
-    // Left peak  P  Right peak
-    draw_outlined_text(#pk_l, peak_left_limit - pk_l_w, y_peak, text_alpha);
+    // Left peak P Right peak
+    draw_outlined_text(#pk_l, peak_l_x, y_peak, text_alpha);
     draw_outlined_text(#pk_lbl_text, peak_lbl_x, y_peak, text_alpha);
-    draw_outlined_text(#pk_r, peak_right_x, y_peak, text_alpha);
+    draw_outlined_text(#pk_r, peak_r_x, y_peak, text_alpha);
 
-    // Left RMS  R/M/S  Right RMS
-    draw_outlined_text(#rm_l, rms_left_limit - rm_l_w, y_rms, text_alpha);
+    // Left RMS R/M/S Right RMS
+    draw_outlined_text(#rm_l, rms_l_x, y_rms, text_alpha);
     draw_outlined_text(#line2_lbl_draw, rms_lbl_x, y_rms, text_alpha);
-    draw_outlined_text(#rm_r, rms_right_x, y_rms, text_alpha);
+    draw_outlined_text(#rm_r, rms_r_x, y_rms, text_alpha);
 
     slider13 > 0 ? (
         sprintf(#crest_top_l, "%.1f", silence_l ? 0 : crest_readout_l);
