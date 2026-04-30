@@ -1,6 +1,6 @@
 --[[
 @desc 7R Spectrum Analyser
 @author 7thResonance
-@version 1.8
+@version 1.9
 @provides [effect] JSFX\7R Spectrum Analyser.jsfx
 --]]
