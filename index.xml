@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="191ce3cd558ac3185dbc3a17783269de26ea62b8">
+<index version="1" name="7thResonance" commit="388810e99bfb0063123e6aab1416fc5e06ce7899">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -680,6 +680,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 - enable disable indivitual marker/region components (name, length, start, end)
 - ordering of region output: name - length - start to end]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/3fc8ecf40ea892099c00c54975c7fe299bcb608f/Utilities/7R%20Marker%20n%20Region%20Exporter%20(GUI)(Project,%20Take,%20Item%20relative,%20Source%20Relative).lua</source>
+      </version>
+      <version name="1.11" author="7thResonance" time="2026-04-30T23:04:10Z">
+        <changelog><![CDATA[- lane support]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/388810e99bfb0063123e6aab1416fc5e06ce7899/Utilities/7R%20Marker%20n%20Region%20Exporter%20(GUI)(Project,%20Take,%20Item%20relative,%20Source%20Relative).lua</source>
       </version>
     </reapack>
     <reapack name="7R MIDI AutoSend.lua" type="script" desc="7R MIDI Auto Send for CC Feedback">
