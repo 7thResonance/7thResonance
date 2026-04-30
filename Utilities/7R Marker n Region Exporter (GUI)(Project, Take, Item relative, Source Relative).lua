@@ -1,11 +1,9 @@
 --[[
 @description 7R Marker n Region Exporter (Project/Take/Regions)
 @author 7thResonance
-@version 1.10
+@version 1.11
 @changelog
-  - enable disable marker/regions
-  - enable disable indivitual marker/region components (name, length, start, end)
-  - ordering of region output: name - length - start to end
+  - lane support
 @about GUI for exporting project and take markers and Regions in various formats.
   - HH:MM:SS
   - HH:MM:SS:MS
@@ -103,6 +101,7 @@ local region_show_start = true
 local region_show_end = true
 local region_field_order = {"name", "length", "start", "end"}
 local apply_project_offset = false -- New option for project start offset
+local selected_ruler_lanes = {}
 
 local REGION_FIELD_KEYS = {"name", "length", "start", "end"}
 local REGION_FIELD_LABELS = {
@@ -189,6 +188,234 @@ local function swap_region_field_order(order, idx_a, idx_b)
   if idx_a < 1 or idx_b < 1 then return end
   if idx_a > #order or idx_b > #order then return end
   order[idx_a], order[idx_b] = order[idx_b], order[idx_a]
+end
+
+local function normalize_lane_number(lane_number)
+  lane_number = tonumber(lane_number) or 0
+  if lane_number < 0 then lane_number = 0 end
+  return math.floor(lane_number + 0.5)
+end
+
+local function read_ruler_lane_name(api_index)
+  if not reaper.GetSetProjectInfo_String then return false, "" end
+  local ok, name = reaper.GetSetProjectInfo_String(0, "RULER_LANE_NAME:" .. tostring(api_index), "", false)
+  return ok == true, name or ""
+end
+
+local function get_project_region_marker_entries()
+  local entries = {}
+
+  if reaper.GetNumRegionsOrMarkers and reaper.GetRegionOrMarker and reaper.GetRegionOrMarkerInfo_Value then
+    local total = reaper.GetNumRegionsOrMarkers(0) or 0
+    for i = 0, total - 1 do
+      local region_or_marker = reaper.GetRegionOrMarker(0, i, "")
+      if region_or_marker then
+        local isrgn = (reaper.GetRegionOrMarkerInfo_Value(0, region_or_marker, "B_ISREGION") or 0) ~= 0
+        local pos = reaper.GetRegionOrMarkerInfo_Value(0, region_or_marker, "D_STARTPOS") or 0
+        local rgnend = reaper.GetRegionOrMarkerInfo_Value(0, region_or_marker, "D_ENDPOS") or pos
+        local idx = math.floor((reaper.GetRegionOrMarkerInfo_Value(0, region_or_marker, "I_NUMBER") or 0) + 0.5)
+        local lane = normalize_lane_number(reaper.GetRegionOrMarkerInfo_Value(0, region_or_marker, "I_LANENUMBER"))
+        local name = ""
+
+        if reaper.GetSetRegionOrMarkerInfo_String then
+          local ok, marker_name = reaper.GetSetRegionOrMarkerInfo_String(0, region_or_marker, "P_NAME", "", false)
+          if ok and marker_name then name = marker_name end
+        end
+
+        table.insert(entries, {
+          idx = idx,
+          isrgn = isrgn,
+          pos = pos,
+          start = pos,
+          ["end"] = rgnend,
+          length = rgnend - pos,
+          name = name,
+          lane = lane,
+        })
+      end
+    end
+    return entries
+  end
+
+  local _, num_markers, num_regions = reaper.CountProjectMarkers(0)
+  local total = num_markers + num_regions
+  for i = 0, total - 1 do
+    local retval, isrgn, pos, rgnend, name, idx = reaper.EnumProjectMarkers(i)
+    if retval then
+      table.insert(entries, {
+        idx = idx,
+        isrgn = isrgn,
+        pos = pos,
+        start = pos,
+        ["end"] = rgnend,
+        length = rgnend - pos,
+        name = name or "",
+        lane = 0,
+      })
+    end
+  end
+  return entries
+end
+
+local function get_ruler_lane_indexing(entries)
+  local ok_zero = read_ruler_lane_name(0)
+  if ok_zero then return 0, true end
+
+  local ok_one = read_ruler_lane_name(1)
+  if ok_one then
+    for _, entry in ipairs(entries or {}) do
+      if normalize_lane_number(entry.lane) == 0 then
+        return 1, true
+      end
+    end
+    return 0, false
+  end
+
+  return 0, true
+end
+
+local function make_ruler_lane_label(lane_id, name, zero_based, hidden)
+  local display_number = zero_based and (lane_id + 1) or lane_id
+  if name and name ~= "" then
+    return name
+  end
+  local label = "Lane " .. tostring(display_number)
+  if hidden then
+    label = label .. " (hidden)"
+  end
+  return label
+end
+
+local function get_current_ruler_lanes(entries)
+  entries = entries or get_project_region_marker_entries()
+  local name_offset, zero_based = get_ruler_lane_indexing(entries)
+  local lanes = {}
+  local seen = {}
+
+  local function add_lane(lane_id, api_index, name)
+    lane_id = normalize_lane_number(lane_id)
+    if seen[lane_id] then return end
+    seen[lane_id] = true
+
+    api_index = api_index or (lane_id + name_offset)
+    if name == nil then
+      local ok, lane_name = read_ruler_lane_name(api_index)
+      name = ok and lane_name or ""
+    end
+
+    local hidden = false
+    local visible = true
+    if reaper.GetSetProjectInfo then
+      hidden = (reaper.GetSetProjectInfo(0, "RULER_LANE_HIDDEN:" .. tostring(api_index), 0, false) or 0) ~= 0
+      visible = (reaper.GetSetProjectInfo(0, "RULER_LANE_VISIBLE:" .. tostring(api_index), 0, false) or 1) ~= 0
+    end
+
+    table.insert(lanes, {
+      id = lane_id,
+      api_index = api_index,
+      name = name or "",
+      hidden = hidden,
+      visible = visible,
+      label = make_ruler_lane_label(lane_id, name or "", zero_based, hidden),
+    })
+  end
+
+  if reaper.GetSetProjectInfo_String then
+    local found_any = false
+    for api_index = 0, 255 do
+      local ok, lane_name = read_ruler_lane_name(api_index)
+      if ok then
+        found_any = true
+        add_lane(api_index - name_offset, api_index, lane_name)
+      elseif found_any then
+        break
+      end
+    end
+  end
+
+  for _, entry in ipairs(entries) do
+    add_lane(entry.lane)
+  end
+
+  if #lanes == 0 then
+    add_lane(0, name_offset, "")
+  end
+
+  table.sort(lanes, function(a, b) return a.id < b.id end)
+  return lanes
+end
+
+local function sanitize_ruler_lane_selection(lanes)
+  local existing = {}
+  for _, lane in ipairs(lanes or {}) do
+    existing[lane.id] = true
+    if selected_ruler_lanes[lane.id] == nil then
+      selected_ruler_lanes[lane.id] = true
+    end
+  end
+
+  for lane_id in pairs(selected_ruler_lanes) do
+    if not existing[lane_id] then
+      selected_ruler_lanes[lane_id] = nil
+    end
+  end
+end
+
+local function set_all_ruler_lanes(lanes, selected)
+  for _, lane in ipairs(lanes or {}) do
+    selected_ruler_lanes[lane.id] = selected
+  end
+end
+
+local function get_selected_ruler_lane_lookup(lanes)
+  local lookup = {}
+  for _, lane in ipairs(lanes or {}) do
+    if selected_ruler_lanes[lane.id] == true then
+      lookup[lane.id] = true
+    end
+  end
+  return lookup
+end
+
+local function is_lane_allowed(lane_id, selected_lane_lookup)
+  if not selected_lane_lookup then return true end
+  return selected_lane_lookup[normalize_lane_number(lane_id)] == true
+end
+
+local function group_entries_by_ruler_lane(entries, lanes)
+  local lane_lookup = {}
+  for _, lane in ipairs(lanes or {}) do
+    lane_lookup[lane.id] = lane
+  end
+
+  local groups_by_lane = {}
+  for _, entry in ipairs(entries or {}) do
+    local lane_id = normalize_lane_number(entry.lane)
+    if not groups_by_lane[lane_id] then
+      local lane = lane_lookup[lane_id]
+      groups_by_lane[lane_id] = {
+        lane_id = lane_id,
+        label = lane and lane.label or ("Lane " .. tostring(lane_id + 1)),
+        entries = {},
+      }
+    end
+    table.insert(groups_by_lane[lane_id].entries, entry)
+  end
+
+  local groups = {}
+  for _, lane in ipairs(lanes or {}) do
+    if groups_by_lane[lane.id] then
+      table.insert(groups, groups_by_lane[lane.id])
+      groups_by_lane[lane.id] = nil
+    end
+  end
+
+  for _, group in pairs(groups_by_lane) do
+    table.insert(groups, group)
+  end
+
+  table.sort(groups, function(a, b) return a.lane_id < b.lane_id end)
+  return groups
 end
 
 local function get_project_framerate()
@@ -450,21 +677,24 @@ local function format_beat_with_offset(seconds, apply_offset)
   return format_time_with_offset(seconds, 10, nil, apply_offset)
 end
 
-local function GetProjectMarkers()
+local function GetProjectMarkers(entries, selected_lane_lookup)
   local markers = {}
-  local _, num_markers, num_regions = reaper.CountProjectMarkers(0)
-  local total = num_markers + num_regions
-  for i = 0, total-1 do
-    local retval, isrgn, pos, rgnend, name, idx = reaper.EnumProjectMarkers(i)
-    if not isrgn then
-      table.insert(markers, {idx=idx, pos=pos, name=name or ""})
+  entries = entries or get_project_region_marker_entries()
+  for _, entry in ipairs(entries) do
+    if not entry.isrgn and is_lane_allowed(entry.lane, selected_lane_lookup) then
+      table.insert(markers, {
+        idx = entry.idx,
+        pos = entry.pos,
+        name = entry.name or "",
+        lane = entry.lane,
+      })
     end
   end
   return markers
 end
 
-local function GetProjectMarkerSelection(time_sel_start, time_sel_end)
-  local all = GetProjectMarkers()
+local function GetProjectMarkerSelection(time_sel_start, time_sel_end, entries, selected_lane_lookup)
+  local all = GetProjectMarkers(entries, selected_lane_lookup)
   if not (time_sel_start and time_sel_end and time_sel_end > time_sel_start) then
     return all
   end
@@ -477,25 +707,24 @@ local function GetProjectMarkerSelection(time_sel_start, time_sel_end)
   return filtered
 end
 
-local function GetProjectRegionsFiltered(time_sel_start, time_sel_end)
+local function GetProjectRegionsFiltered(time_sel_start, time_sel_end, entries, selected_lane_lookup)
   local regions = {}
-  local _, num_markers, num_regions = reaper.CountProjectMarkers(0)
-  local total = num_markers + num_regions
-  for i = 0, total-1 do
-    local retval, isrgn, pos, rgnend, name, idx = reaper.EnumProjectMarkers(i)
-    if isrgn then
+  entries = entries or get_project_region_marker_entries()
+  for _, entry in ipairs(entries) do
+    if entry.isrgn and is_lane_allowed(entry.lane, selected_lane_lookup) then
       local include = true
       if time_sel_start and time_sel_end and time_sel_end > time_sel_start then
         -- region overlaps time selection?
-        include = (rgnend > time_sel_start) and (pos < time_sel_end)
+        include = (entry["end"] > time_sel_start) and (entry.start < time_sel_end)
       end
       if include then
         table.insert(regions, {
-          idx = idx,
-          name = name or "",
-          start = pos,
-          ["end"] = rgnend,
-          length = rgnend - pos
+          idx = entry.idx,
+          name = entry.name or "",
+          start = entry.start,
+          ["end"] = entry["end"],
+          length = entry.length,
+          lane = entry.lane,
         })
       end
     end
@@ -899,6 +1128,10 @@ local function Main_Export()
 
   local out = {}
   local framerate = get_project_framerate()
+  local project_marker_region_entries = get_project_region_marker_entries()
+  local ruler_lanes = get_current_ruler_lanes(project_marker_region_entries)
+  sanitize_ruler_lane_selection(ruler_lanes)
+  local selected_lane_lookup = get_selected_ruler_lane_lookup(ruler_lanes)
 
   -- Time selection
   local time_sel_start, time_sel_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
@@ -908,11 +1141,15 @@ local function Main_Export()
 
   if export_markers_enabled then
     -- Project Markers
-    local proj_markers = GetProjectMarkerSelection(time_sel_start, time_sel_end)
+    local proj_markers = GetProjectMarkerSelection(time_sel_start, time_sel_end, project_marker_region_entries, selected_lane_lookup)
     if #proj_markers > 0 then
       table.insert(out, "Project Markers:")
-      local proj_lines = GenerateMarkerBlock(proj_markers, marker_time_format, marker_custom_format, marker_numbering, framerate, 2, marker_name_enabled)
-      for _, line in ipairs(proj_lines) do table.insert(out, line) end
+      local marker_lane_groups = group_entries_by_ruler_lane(proj_markers, ruler_lanes)
+      for _, group in ipairs(marker_lane_groups) do
+        table.insert(out, group.label .. ":")
+        local proj_lines = GenerateMarkerBlock(group.entries, marker_time_format, marker_custom_format, marker_numbering, framerate, 2, marker_name_enabled)
+        for _, line in ipairs(proj_lines) do table.insert(out, line) end
+      end
       table.insert(out, "")
     end
 
@@ -935,17 +1172,21 @@ local function Main_Export()
 
   if export_regions_enabled then
     -- Regions
-    local regions = GetProjectRegionsFiltered(time_sel_start, time_sel_end)
+    local regions = GetProjectRegionsFiltered(time_sel_start, time_sel_end, project_marker_region_entries, selected_lane_lookup)
     if #regions > 0 then
       table.insert(out, "Regions:")
-      local region_lines = GenerateRegionBlock(
-        regions,
-        region_len_fmt, region_start_fmt, region_end_fmt,
-        region_custom_len_format, region_custom_start_format, region_custom_end_format,
-        framerate, region_numbering, region_name_enabled,
-        region_show_length, region_show_start, region_show_end, region_field_order
-      )
-      for _, line in ipairs(region_lines) do table.insert(out, line) end
+      local region_lane_groups = group_entries_by_ruler_lane(regions, ruler_lanes)
+      for _, group in ipairs(region_lane_groups) do
+        table.insert(out, group.label .. ":")
+        local region_lines = GenerateRegionBlock(
+          group.entries,
+          region_len_fmt, region_start_fmt, region_end_fmt,
+          region_custom_len_format, region_custom_start_format, region_custom_end_format,
+          framerate, region_numbering, region_name_enabled,
+          region_show_length, region_show_start, region_show_end, region_field_order
+        )
+        for _, line in ipairs(region_lines) do table.insert(out, line) end
+      end
       table.insert(out, "")
     end
   end
@@ -1127,6 +1368,36 @@ local function loop()
     reaper.ImGui_PopFont(ctx)
 
     PresetGUI()
+
+    reaper.ImGui_Separator(ctx)
+    local ruler_lanes = get_current_ruler_lanes()
+    sanitize_ruler_lane_selection(ruler_lanes)
+    reaper.ImGui_Text(ctx, "Project Marker/Region Lanes")
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, "All##ruler_lanes_all") then
+      set_all_ruler_lanes(ruler_lanes, true)
+    end
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, "None##ruler_lanes_none") then
+      set_all_ruler_lanes(ruler_lanes, false)
+    end
+    for _, lane in ipairs(ruler_lanes) do
+      local selected = selected_ruler_lanes[lane.id] == true
+      local changed, new_selected = reaper.ImGui_Checkbox(ctx, lane.label .. "##ruler_lane_" .. tostring(lane.id), selected)
+      if changed then
+        selected_ruler_lanes[lane.id] = new_selected
+      end
+    end
+    local any_lane_selected = false
+    for _, lane in ipairs(ruler_lanes) do
+      if selected_ruler_lanes[lane.id] == true then
+        any_lane_selected = true
+        break
+      end
+    end
+    if not any_lane_selected then
+      reaper.ImGui_Text(ctx, "No project marker/region lanes selected.")
+    end
 
     reaper.ImGui_Separator(ctx)
     reaper.ImGui_Text(ctx, "Project/Take Marker Format")
