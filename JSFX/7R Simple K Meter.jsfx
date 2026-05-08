@@ -1,8 +1,9 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.19
+version: 1.20
 about: A simple K meter JSFX
-changelog:  - added peak over display
+changelog:  - added DR/Loudness Range graph
+            - Improved tranport state and drawing behaviour
 options:no_meter
 
 
@@ -23,6 +24,7 @@ slider11:1<0,1,1{Off,On}>Show Peak High Line
 slider12:1<0,1,1{Off,On}>Show RMS High Line
 slider13:1<0,1,1{Off,On}>Show Crest/Dynamics
 slider14:0<-60,24,0.1>Max Peak (dBFS)
+slider15:1<0,1,1{Off,On}>Show DR Graph
 
 //------------------------------------------------
 // Constants
@@ -67,6 +69,34 @@ over_count_r = 0;
 over_alpha_l = 0;
 over_alpha_r = 0;
 last_sr = 0;
+dyn_hist = 0;
+dyn_bins = 96;
+dyn_min_k = 1000000;
+dyn_max_k = -1000000;
+dyn_hist_peak = 0;
+dyn_have_hist = 0;
+dyn_transport_pos_prev = 0;
+dyn_last_play_state = 0;
+dyn_was_running = 0;
+dyn_seek_pending = 0;
+dyn_last_mode = -1;
+dyn_last_scale_min = 0;
+dyn_last_scale_max = 0;
+lra_hist = 0;
+lra_ring = 0;
+lra_bins = 188;
+lra_win_blocks = 30;
+lra_min_lufs = -70;
+lra_max_lufs = 24;
+lra_bin_db = 0.5;
+lra_hop_count = 0;
+lra_hop_sum = 0;
+lra_ring_idx = 0;
+lra_blocks_filled = 0;
+lra_window_sum = 0;
+lra_hist_count = 0;
+lra_hist_peak = 0;
+meter_ready = 0;
 
 f1a1 = f1a2 = f1b0 = f1b1 = f1b2 = 0;
 f2a1 = f2a2 = f2b0 = f2b1 = f2b2 = 0;
@@ -77,10 +107,106 @@ f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
 // Init
 //------------------------------------------------
 @init
+function reset_dyn_history()
+  local(i)
+  globals(dyn_hist dyn_bins dyn_min_k dyn_max_k dyn_hist_peak dyn_have_hist)
+(
+  dyn_min_k = 1000000;
+  dyn_max_k = -1000000;
+  dyn_hist_peak = 0;
+  dyn_have_hist = 0;
+  i = 0;
+  loop(dyn_bins,
+    dyn_hist[i] = 0;
+    i += 1;
+  );
+);
+
+function reset_lra_history()
+  local(i)
+  globals(lra_hist lra_ring lra_bins lra_win_blocks lra_hop_count lra_hop_sum lra_ring_idx lra_blocks_filled lra_window_sum lra_hist_count lra_hist_peak)
+(
+  lra_hop_count = 0;
+  lra_hop_sum = 0;
+  lra_ring_idx = 0;
+  lra_blocks_filled = 0;
+  lra_window_sum = 0;
+  lra_hist_count = 0;
+  lra_hist_peak = 0;
+
+  i = 0;
+  loop(lra_bins,
+    lra_hist[i] = 0;
+    i += 1;
+  );
+
+  i = 0;
+  loop(lra_win_blocks,
+    lra_ring[i] = 0;
+    i += 1;
+  );
+);
+
+function reset_meter_levels()
+  globals(
+    rms_acc_l rms_acc_r lufs_m_acc_l lufs_m_acc_r lufs_s_acc_l lufs_s_acc_r
+    rms_out_l rms_out_r rms_high_out_l rms_high_out_r rms_hold_count_l rms_hold_count_r
+    peak_out_l peak_out_r peak_hold_count_l peak_hold_count_r
+    crest_out_l crest_out_r crest_readout_l crest_readout_r crest_hold_count_l crest_hold_count_r
+    silence_l silence_r silence_count_l silence_count_r vis_alpha_l vis_alpha_r
+    over_readout_l over_readout_r over_count_l over_count_r over_alpha_l over_alpha_r
+    f1p1_l f1p2_l f2p1_l f2p2_l f1p1_r f1p2_r f2p1_r f2p2_r
+    meter_ready
+  )
+(
+  rms_acc_l = rms_acc_r = 0;
+  lufs_m_acc_l = lufs_m_acc_r = 0;
+  lufs_s_acc_l = lufs_s_acc_r = 0;
+  rms_out_l = rms_out_r = 0;
+  rms_high_out_l = rms_high_out_r = 0;
+  rms_hold_count_l = rms_hold_count_r = 0;
+
+  peak_out_l = peak_out_r = 0;
+  peak_hold_count_l = peak_hold_count_r = 0;
+  crest_out_l = crest_out_r = 0;
+  crest_readout_l = crest_readout_r = 0;
+  crest_hold_count_l = crest_hold_count_r = 0;
+
+  silence_l = silence_r = 1;
+  silence_count_l = silence_count_r = 0;
+  vis_alpha_l = vis_alpha_r = 0;
+  over_readout_l = over_readout_r = 0;
+  over_count_l = over_count_r = 0;
+  over_alpha_l = over_alpha_r = 0;
+
+  f1p1_l = f1p2_l = f2p1_l = f2p2_l = 0;
+  f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
+  meter_ready = 0;
+);
+
 gfx_ext_flags |= 0x100 | 0x200;
 gfx_w = 30;
 gfx_h = 800;
 last_sr = srate;
+dyn_hist = 0;
+dyn_bins = 96;
+lra_hist = 256;
+lra_ring = 512;
+lra_bins = 188;
+lra_win_blocks = 30;
+lra_min_lufs = -70;
+lra_max_lufs = 24;
+lra_bin_db = (lra_max_lufs - lra_min_lufs) / lra_bins;
+reset_meter_levels();
+reset_dyn_history();
+reset_lra_history();
+dyn_transport_pos_prev = play_position;
+dyn_last_play_state = play_state;
+dyn_was_running = (play_state & 1) ? 1 : 0;
+dyn_seek_pending = 0;
+dyn_last_mode = slider1;
+dyn_last_scale_min = slider6;
+dyn_last_scale_max = slider7;
 db = 3.999843853973347;
 f0 = 1681.974450955533;
 Q = 0.7071752369554196;
@@ -105,6 +231,30 @@ f2b1 = -2;
 f2b2 = 1;
 
 @block
+dyn_is_running = (play_state & 1) ? 1 : 0;
+dyn_transport_reset = 0;
+
+!dyn_is_running ? (
+    abs(play_position - dyn_transport_pos_prev) > 0.0005 ? (
+        dyn_seek_pending = 1;
+    );
+) : (
+    (!dyn_was_running && !(dyn_last_play_state & 2)) ? dyn_transport_reset = 1;
+    (!dyn_was_running && dyn_seek_pending) ? dyn_transport_reset = 1;
+    dyn_was_running && abs(play_position - dyn_transport_pos_prev) > 0.250 ? dyn_transport_reset = 1;
+);
+
+dyn_transport_reset ? (
+    reset_meter_levels();
+    reset_dyn_history();
+    reset_lra_history();
+    dyn_seek_pending = 0;
+);
+
+dyn_was_running = dyn_is_running;
+dyn_transport_pos_prev = play_position;
+dyn_last_play_state = play_state;
+
 srate != last_sr ? (
     last_sr = srate;
     db = 3.999843853973347;
@@ -129,16 +279,9 @@ srate != last_sr ? (
     f2b0 = 1;
     f2b1 = -2;
     f2b2 = 1;
-    f1p1_l = f1p2_l = f2p1_l = f2p2_l = 0;
-    f1p1_r = f1p2_r = f2p1_r = f2p2_r = 0;
-    lufs_m_acc_l = 0;
-    lufs_m_acc_r = 0;
-    lufs_s_acc_l = 0;
-    lufs_s_acc_r = 0;
-    crest_out_l = crest_out_r = 0;
-    crest_readout_l = crest_readout_r = 0;
-    crest_hold_count_l = 0;
-    crest_hold_count_r = 0;
+    reset_meter_levels();
+    reset_dyn_history();
+    reset_lra_history();
 );
 
 //------------------------------------------------
@@ -205,6 +348,42 @@ lufs_mode ? (
 ) : (
     lufs_s_acc_l = 0;
     lufs_s_acc_r = 0;
+);
+
+// EBU Tech 3342-style LRA source: 3 s short-term loudness sampled at 10 Hz.
+lufs_mode && (play_state & 1) ? (
+    lra_hop_target = max(floor(srate * 0.1 + 0.5), 1);
+    lra_hop_sum += rms_in_l * rms_in_l + rms_in_r * rms_in_r;
+    lra_hop_count += 1;
+
+    lra_hop_count >= lra_hop_target ? (
+        lra_old_sum = lra_ring[lra_ring_idx];
+        lra_window_sum += lra_hop_sum - lra_old_sum;
+        lra_ring[lra_ring_idx] = lra_hop_sum;
+        lra_ring_idx += 1;
+        lra_ring_idx >= lra_win_blocks ? lra_ring_idx = 0;
+        lra_blocks_filled < lra_win_blocks ? lra_blocks_filled += 1;
+
+        lra_blocks_filled >= lra_win_blocks ? (
+            lra_window_energy = lra_window_sum / (lra_hop_target * lra_win_blocks);
+            lra_short_lufs = -0.691 + 10 * log10(max(lra_window_energy, EPS));
+            lra_short_lufs >= lra_min_lufs ? (
+                lra_idx = floor((min(lra_short_lufs, lra_max_lufs - 0.0001) - lra_min_lufs) / lra_bin_db);
+                lra_idx = min(max(lra_idx, 0), lra_bins - 1);
+                lra_hist[lra_idx] += 1;
+                lra_hist_count += 1;
+                lra_hist[lra_idx] > lra_hist_peak ? lra_hist_peak = lra_hist[lra_idx];
+            );
+        );
+
+        lra_hop_sum = 0;
+        lra_hop_count = 0;
+    );
+) : (
+    !lufs_mode ? (
+        lra_hop_sum = 0;
+        lra_hop_count = 0;
+    );
 );
 
 // Peak with two-stage falloff:
@@ -347,6 +526,8 @@ rms_high_in_r >= rms_high_out_r ? (
     );
 );
 
+meter_ready = 1;
+
 //------------------------------------------------
 // Graphics
 //------------------------------------------------
@@ -449,10 +630,75 @@ rms_high_n_r = min(max(rms_high_n_r, 0), 1);
 peak_n_l = min(max(peak_n_l, 0), 1);
 peak_n_r = min(max(peak_n_r, 0), 1);
 
+// ----- RMS/LUFS dynamic range history -----
+dyn_gfx_is_running = (play_state & 1) ? 1 : 0;
+dyn_gfx_reset = 0;
+lra_gfx_reset = 0;
+
+!dyn_gfx_is_running && abs(play_position - dyn_transport_pos_prev) > 0.0005 ? dyn_seek_pending = 1;
+dyn_gfx_is_running ? (
+    (!dyn_was_running && !(dyn_last_play_state & 2)) ? (dyn_gfx_reset = 1; lra_gfx_reset = 1;);
+    (!dyn_was_running && dyn_seek_pending) ? (dyn_gfx_reset = 1; lra_gfx_reset = 1;);
+    dyn_was_running && abs(play_position - dyn_transport_pos_prev) > 0.250 ? (dyn_gfx_reset = 1; lra_gfx_reset = 1;);
+);
+slider1 != dyn_last_mode ? (dyn_gfx_reset = 1; lra_gfx_reset = 1;);
+slider6 != dyn_last_scale_min ? dyn_gfx_reset = 1;
+slider7 != dyn_last_scale_max ? dyn_gfx_reset = 1;
+
+dyn_gfx_reset ? (
+    reset_dyn_history();
+    lra_gfx_reset ? (
+        reset_meter_levels();
+        reset_lra_history();
+    );
+    dyn_seek_pending = 0;
+    dyn_last_mode = slider1;
+    dyn_last_scale_min = slider6;
+    dyn_last_scale_max = slider7;
+    dyn_last_play_state = play_state;
+    dyn_was_running = dyn_gfx_is_running;
+    !dyn_gfx_is_running ? dyn_transport_pos_prev = play_position;
+);
+
+meter_ready <= 0 ? (
+    rms_n_l = rms_n_r = 0;
+    rms_high_n_l = rms_high_n_r = 0;
+    peak_n_l = peak_n_r = 0;
+    rms_k_l = rms_k_r = scale_min;
+    peak_k_l = peak_k_r = scale_min;
+    rms_high_k_l = rms_high_k_r = scale_min;
+    silence_l = silence_r = 1;
+    vis_alpha_l = vis_alpha_r = 0;
+    over_alpha_l = over_alpha_r = 0;
+);
+
+dyn_value_k = lufs_m_mode ? lufs_momentary_db :
+              lufs_s_mode ? lufs_short_db :
+                            max(rms_k_l, rms_k_r);
+
+dyn_update_active = meter_ready > 0 && dyn_gfx_is_running && !(silence_l && silence_r) && max(vis_alpha_l, vis_alpha_r) > 0.02;
+dyn_update_active ? (
+    dyn_have_hist <= 0 ? (
+        dyn_min_k = dyn_value_k;
+        dyn_max_k = dyn_value_k;
+        dyn_have_hist = 1;
+    ) : (
+        dyn_value_k < dyn_min_k ? dyn_min_k = dyn_value_k;
+        dyn_value_k > dyn_max_k ? dyn_max_k = dyn_value_k;
+    );
+
+    dyn_idx = floor(((dyn_value_k - scale_min) / scale_span) * dyn_bins);
+    dyn_idx = min(max(dyn_idx, 0), dyn_bins - 1);
+    dyn_hist[dyn_idx] += 1;
+    dyn_hist[dyn_idx] > dyn_hist_peak ? dyn_hist_peak = dyn_hist[dyn_idx];
+);
+
 // ----- Geometry -----
-pad = 18;
+pad = gfx_w < 60 * gfx_ext_retina ? max(floor(gfx_w * 0.16 + 0.5), 4) : 18;
+dyn_history_on = slider15 > 0;
 meter_h = gfx_h - pad*2;
 meter_w = gfx_w - pad*2;
+meter_w = max(meter_w, max(floor(8 * gfx_ext_retina + 0.5), 4));
 meter_top = pad;
 meter_bottom = gfx_h - pad;
 bar_w = meter_w / 2;
@@ -668,6 +914,167 @@ top_tick_needed ? (
     scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
     scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
     draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
+);
+
+// ----- RMS/LUFS dynamic range history graph overlay -----
+dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter_w > 4 ? (
+    dyn_min_n = min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
+    dyn_max_n = min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
+    dyn_y_top = max(floor(meter_bottom - dyn_max_n * meter_h + 0.5), meter_top);
+    dyn_y_bottom = min(floor(meter_bottom - dyn_min_n * meter_h + 0.5), meter_bottom);
+    dyn_line_h = max(floor(meter_h / dyn_bins + 0.999), 1);
+    dyn_wave_w_max = max(floor(meter_w * 0.5 + 0.5), 1);
+
+    i = 0;
+    loop(dyn_bins,
+        dyn_bin_v = dyn_hist[i];
+        dyn_bin_v > 0 ? (
+            dyn_bin_n = (i + 0.5) / dyn_bins;
+            dyn_k = scale_min + dyn_bin_n * scale_span;
+            dyn_y = floor(meter_bottom - dyn_bin_n * meter_h + 0.5);
+
+            dyn_y >= dyn_y_top && dyn_y <= dyn_y_bottom ? (
+                dyn_wave_ref = max(dyn_hist_peak, 30);
+                dyn_wave_n = min(dyn_bin_v / dyn_wave_ref, 1);
+                dyn_wave_half_w = max(floor(dyn_wave_w_max * dyn_wave_n + 0.5), 1);
+                dyn_wave_x = max(floor(meter_mid - dyn_wave_half_w + 0.5), meter_left);
+                dyn_wave_r = min(floor(meter_mid + dyn_wave_half_w + 0.5), meter_right);
+                dyn_line_y = min(max(floor(dyn_y - dyn_line_h * 0.5 + 0.5), meter_top), meter_bottom - dyn_line_h + 1);
+
+                non_k_mode ? (
+                    dyn_col_r = 0.18;
+                    dyn_col_g = 0.70;
+                    dyn_col_b = 1.00;
+                ) : dyn_k >= thresh_red ? (
+                    dyn_col_r = 1.00;
+                    dyn_col_g = 0.22;
+                    dyn_col_b = 0.22;
+                ) : dyn_k >= thresh_yellow ? (
+                    dyn_col_r = 1.00;
+                    dyn_col_g = 0.86;
+                    dyn_col_b = 0.20;
+                ) : (
+                    dyn_col_r = 0.16;
+                    dyn_col_g = 0.95;
+                    dyn_col_b = 0.42;
+                );
+
+                gfx_set(dyn_col_r, dyn_col_g, dyn_col_b, 0.38 + 0.52 * dyn_wave_n);
+                gfx_rect(dyn_wave_x, dyn_line_y, dyn_wave_r - dyn_wave_x, dyn_line_h);
+            );
+        );
+        i += 1;
+    );
+);
+
+// ----- Range readout above 0 dB line (LRA in LUFS modes) -----
+dyn_zero_tick_idx = (0 - scale_min) / scale_step;
+dyn_zero_tick_nearest = floor(dyn_zero_tick_idx + 0.5);
+dyn_zero_line_visible =
+    scale_min <= 0 &&
+    scale_max >= 0 &&
+    (abs(dyn_zero_tick_idx - dyn_zero_tick_nearest) < 0.001 || abs(scale_max) < 0.001);
+
+dyn_history_on && dyn_zero_line_visible ? (
+    dyn_readout_ready = 0;
+
+    lufs_mode ? (
+        lra_abs_count = 0;
+        lra_abs_energy_sum = 0;
+
+        i = 0;
+        loop(lra_bins,
+            lra_bin_v = lra_hist[i];
+            lra_bin_v > 0 ? (
+                lra_bin_lufs = lra_min_lufs + (i + 0.5) * lra_bin_db;
+                lra_abs_count += lra_bin_v;
+                lra_abs_energy_sum += lra_bin_v * pow(10, lra_bin_lufs / 10);
+            );
+            i += 1;
+        );
+
+        lra_abs_count > 0 ? (
+            lra_abs_loudness = 10 * log10(max(lra_abs_energy_sum / lra_abs_count, EPS));
+            lra_rel_gate = max(lra_min_lufs, lra_abs_loudness - 20);
+            lra_gated_count = 0;
+
+            i = 0;
+            loop(lra_bins,
+                lra_bin_v = lra_hist[i];
+                lra_bin_v > 0 ? (
+                    lra_bin_lufs = lra_min_lufs + (i + 0.5) * lra_bin_db;
+                    lra_bin_lufs >= lra_rel_gate ? lra_gated_count += lra_bin_v;
+                );
+                i += 1;
+            );
+
+            lra_gated_count >= 3 ? (
+                lra_low_rank = floor((lra_gated_count - 1) * 0.10 + 0.5) + 1;
+                lra_high_rank = floor((lra_gated_count - 1) * 0.95 + 0.5) + 1;
+                lra_cum = 0;
+                lra_low_found = 0;
+                lra_high_found = 0;
+
+                i = 0;
+                loop(lra_bins,
+                    lra_bin_v = lra_hist[i];
+                    lra_bin_v > 0 ? (
+                        lra_bin_lufs = lra_min_lufs + (i + 0.5) * lra_bin_db;
+                        lra_bin_lufs >= lra_rel_gate ? (
+                            lra_cum += lra_bin_v;
+                            !lra_low_found && lra_cum >= lra_low_rank ? (
+                                lra_low_lufs = lra_bin_lufs;
+                                lra_low_found = 1;
+                            );
+                            !lra_high_found && lra_cum >= lra_high_rank ? (
+                                lra_high_lufs = lra_bin_lufs;
+                                lra_high_found = 1;
+                            );
+                        );
+                    );
+                    i += 1;
+                );
+
+                lra_low_found && lra_high_found ? (
+                    dyn_range_db = max(lra_high_lufs - lra_low_lufs, 0);
+                    dyn_readout_ready = 1;
+                );
+            );
+        );
+    ) : dyn_have_hist > 0 ? (
+        dyn_pop_min_idx = dyn_bins;
+        dyn_pop_max_idx = -1;
+        dyn_pop_min_hits = 3;
+
+        i = 0;
+        loop(dyn_bins,
+            dyn_hist[i] >= dyn_pop_min_hits ? (
+                i < dyn_pop_min_idx ? dyn_pop_min_idx = i;
+                i > dyn_pop_max_idx ? dyn_pop_max_idx = i;
+            );
+            i += 1;
+        );
+
+        dyn_pop_max_idx >= dyn_pop_min_idx ? (
+            dyn_bin_db = scale_span / dyn_bins;
+            dyn_range_db = (dyn_pop_max_idx - dyn_pop_min_idx + 1) * dyn_bin_db;
+            dyn_readout_ready = 1;
+        );
+    );
+
+    dyn_readout_ready ? (
+        sprintf(#dyn_dr_lbl, "%.1f", dyn_range_db);
+        gfx_measurestr(#dyn_dr_lbl, dyn_dr_lbl_w, dyn_dr_lbl_h);
+
+        dyn_zero_y = floor(meter_bottom - meter_h * ((0 - scale_min) / scale_span) + 0.5);
+        dyn_dr_y = floor(dyn_zero_y - dyn_dr_lbl_h - 2 + 0.5);
+
+        dyn_dr_y >= meter_top ? (
+            dyn_dr_x = floor(meter_mid - dyn_dr_lbl_w * 0.5 + 0.5);
+            dyn_dr_lbl_w <= meter_w ? dyn_dr_x = min(max(dyn_dr_x, meter_left), meter_right - dyn_dr_lbl_w);
+            draw_outlined_text(#dyn_dr_lbl, dyn_dr_x, dyn_dr_y, 0.95);
+        );
+    );
 );
 
 //------------------------------------------------
