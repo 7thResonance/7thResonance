@@ -1,9 +1,9 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.21
+version: 1.22
 about: A simple K meter JSFX
-changelog:  - Percentile based DR for peak/RMS
-            - Improved LUFS DR accuracy
+changelog:  - Moved DR value readout the middle of graph
+            - Shadow for ther DR graph.
 options:no_meter
 
 
@@ -97,6 +97,7 @@ lra_window_sum = 0;
 lra_hist_count = 0;
 lra_hist_peak = 0;
 meter_ready = 0;
+dyn_dr_y_smoothed = 0;
 
 f1a1 = f1a2 = f1b0 = f1b1 = f1b2 = 0;
 f2a1 = f2a2 = f2b0 = f2b1 = f2b2 = 0;
@@ -713,6 +714,59 @@ crest_bar_w = max(floor(bar_w * 0.4 + 0.5), 2);
 crest_bar_l_x = floor(meter_left + (bar_w - crest_bar_w) * 0.5 + 0.5);
 crest_bar_r_x = floor(meter_mid + (bar_w - crest_bar_w) * 0.5 + 0.5);
 
+// ----- RMS/LUFS dynamic range history graph overlay -----
+dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter_w > 4 ? (
+    dyn_min_n = dyn_scope_ready ? ((dyn_scope_low_idx + 0.5) / dyn_bins) : min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
+    dyn_max_n = dyn_scope_ready ? ((dyn_scope_high_idx + 0.5) / dyn_bins) : min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
+    dyn_y_top = max(floor(meter_bottom - dyn_max_n * meter_h + 0.5), meter_top);
+    dyn_y_bottom = min(floor(meter_bottom - dyn_min_n * meter_h + 0.5), meter_bottom);
+    dyn_line_h = max(floor(meter_h / dyn_bins + 0.999), 1);
+    dyn_wave_w_max = max(floor(meter_w * 0.5 + 0.5), 1);
+
+    i = 0;
+    loop(dyn_bins,
+        dyn_bin_v = dyn_hist[i];
+        dyn_bin_in_scope = !dyn_scope_ready || (i >= dyn_scope_low_idx && i <= dyn_scope_high_idx);
+        dyn_bin_v > 0 && dyn_bin_in_scope ? (
+            dyn_bin_n = (i + 0.5) / dyn_bins;
+            dyn_k = scale_min + dyn_bin_n * scale_span;
+            dyn_y = floor(meter_bottom - dyn_bin_n * meter_h + 0.5);
+
+            dyn_y >= dyn_y_top && dyn_y <= dyn_y_bottom ? (
+                dyn_wave_ref = dyn_scope_ready ? dyn_scope_hist_peak : dyn_hist_peak;
+                dyn_wave_ref = max(dyn_wave_ref, 30);
+                dyn_wave_n = min(dyn_bin_v / dyn_wave_ref, 1);
+                dyn_wave_half_w = max(floor(dyn_wave_w_max * dyn_wave_n + 0.5), 1);
+                dyn_wave_x = max(floor(meter_mid - dyn_wave_half_w + 0.5), meter_left);
+                dyn_wave_r = min(floor(meter_mid + dyn_wave_half_w + 0.5), meter_right);
+                dyn_line_y = min(max(floor(dyn_y - dyn_line_h * 0.5 + 0.5), meter_top), meter_bottom - dyn_line_h + 1);
+
+                non_k_mode ? (
+                    dyn_col_r = 0.18;
+                    dyn_col_g = 0.70;
+                    dyn_col_b = 1.00;
+                ) : dyn_k >= thresh_red ? (
+                    dyn_col_r = 1.00;
+                    dyn_col_g = 0.22;
+                    dyn_col_b = 0.22;
+                ) : dyn_k >= thresh_yellow ? (
+                    dyn_col_r = 1.00;
+                    dyn_col_g = 0.86;
+                    dyn_col_b = 0.20;
+                ) : (
+                    dyn_col_r = 0.16;
+                    dyn_col_g = 0.95;
+                    dyn_col_b = 0.42;
+                );
+
+                gfx_set(dyn_col_r, dyn_col_g, dyn_col_b, 0.38 + 0.52 * dyn_wave_n);
+                gfx_rect(dyn_wave_x, dyn_line_y, dyn_wave_r - dyn_wave_x, dyn_line_h);
+            );
+        );
+        i += 1;
+    );
+);
+
 // ----- RMS bars -----
 thresh_yellow_n = (thresh_yellow - scale_min) / scale_span;
 thresh_red_n = (thresh_red - scale_min) / scale_span;
@@ -850,12 +904,81 @@ over_alpha_r > 0 && !(slider11 > 0 && over_on_scale_r) ? (
     gfx_rect(meter_mid, meter_top, bar_w, cap_h);
 );
 
+// ----- Meter shadow overlay for DR history -----
+dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter_w > 4 ? (
+    left_fill_top = non_k_mode ? full_y_l : red_y_l;
+    right_fill_top = non_k_mode ? full_y_r : red_y_r;
+    dyn_wave_ref = dyn_scope_ready ? dyn_scope_hist_peak : dyn_hist_peak;
+    dyn_wave_ref = max(dyn_wave_ref, 30);
+    dyn_wave_w_max = max(floor(meter_w * 0.5 + 0.5), 1);
+    
+    i = 0;
+    loop(dyn_bins,
+        dyn_bin_v = dyn_hist[i];
+        dyn_bin_in_scope = !dyn_scope_ready || (i >= dyn_scope_low_idx && i <= dyn_scope_high_idx);
+        dyn_bin_v > 0 && dyn_bin_in_scope ? (
+            dyn_bin_n = (i + 0.5) / dyn_bins;
+            dyn_y = floor(meter_bottom - dyn_bin_n * meter_h + 0.5);
+            dyn_line_y = min(max(floor(dyn_y - dyn_line_h * 0.5 + 0.5), meter_top), meter_bottom - dyn_line_h + 1);
+
+            // Calculate per-bin bar width (same as history graph)
+            dyn_wave_n = min(dyn_bin_v / dyn_wave_ref, 1);
+            dyn_wave_half_w = max(floor(dyn_wave_w_max * dyn_wave_n + 0.5), 1);
+            dyn_wave_x = max(floor(meter_mid - dyn_wave_half_w + 0.5), meter_left);
+            dyn_wave_r = min(floor(meter_mid + dyn_wave_half_w + 0.5), meter_right);
+
+            left_has_fill = dyn_line_y >= left_fill_top && dyn_line_y <= meter_bottom - 1;
+            right_has_fill = dyn_line_y >= right_fill_top && dyn_line_y <= meter_bottom - 1;
+
+            gfx_set(0, 0, 0, 0.10);
+            
+            left_has_fill ? (
+                dyn_left_x = max(dyn_wave_x, meter_left);
+                dyn_left_r = min(dyn_wave_r, meter_mid);
+                dyn_left_x < dyn_left_r ? (
+                    gfx_line(dyn_left_x, dyn_line_y, dyn_left_x, dyn_line_y + dyn_line_h - 1);
+                    gfx_line(dyn_left_x, dyn_line_y, dyn_left_r - 1, dyn_line_y);
+                    gfx_line(dyn_left_r - 1, dyn_line_y, dyn_left_r - 1, dyn_line_y + dyn_line_h - 1);
+                );
+            ) : 0;
+            
+            right_has_fill ? (
+                dyn_right_x = max(dyn_wave_x, meter_mid);
+                dyn_right_r = min(dyn_wave_r, meter_right);
+                dyn_right_x < dyn_right_r ? (
+                    gfx_line(dyn_right_x, dyn_line_y, dyn_right_x, dyn_line_y + dyn_line_h - 1);
+                    gfx_line(dyn_right_x, dyn_line_y, dyn_right_r - 1, dyn_line_y);
+                    gfx_line(dyn_right_r - 1, dyn_line_y, dyn_right_r - 1, dyn_line_y + dyn_line_h - 1);
+                );
+            ) : 0;
+        );
+        i += 1;
+    );
+) : 0;
+
 //------------------------------------------------
 // Scale: user-defined dB increments
 //------------------------------------------------
 steps = floor(scale_span / scale_step);
 i = 0;
 top_tick_needed = abs((scale_min + steps * scale_step) - scale_max) > 0.001;
+
+dyn_draw_readout ? (
+    gfx_setfont(2,"Arial",dyn_readout_font);
+    gfx_measurestr(#dyn_dr_lbl, dyn_dr_lbl_w, dyn_dr_lbl_h);
+    dyn_dr_x = meter_left + floor((meter_w - dyn_dr_lbl_w) * 0.5 + 0.5);
+    dyn_dr_y = floor((dyn_readout_y_top + dyn_readout_y_bottom - dyn_dr_lbl_h) * 0.5 + 0.5);
+    dyn_dr_box_left = dyn_dr_x - 5;
+    dyn_dr_box_right = dyn_dr_x + dyn_dr_lbl_w + 5;
+    dyn_dr_box_top = dyn_dr_y - 2;
+    dyn_dr_box_bottom = dyn_dr_y + dyn_dr_lbl_h + 2;
+    gfx_ext_retina>1 ? gfx_setfont(1,"Arial",16*gfx_ext_retina,'b') : gfx_setfont(0);
+) : (
+    dyn_dr_box_left = -1;
+    dyn_dr_box_right = -1;
+    dyn_dr_box_top = -1;
+    dyn_dr_box_bottom = -1;
+);
 
 loop(steps + 1,
 (
@@ -885,7 +1008,13 @@ loop(steps + 1,
         gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
         scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
         scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
-        draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
+        skip_scale_lbl =
+            dyn_draw_readout &&
+            scale_lbl_x + scale_lbl_w > dyn_dr_box_left &&
+            scale_lbl_x < dyn_dr_box_right &&
+            scale_lbl_y + scale_lbl_h > dyn_dr_box_top &&
+            scale_lbl_y < dyn_dr_box_bottom;
+        !skip_scale_lbl ? draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
     );
 
     i += 1;
@@ -916,7 +1045,13 @@ top_tick_needed ? (
     gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
     scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
     scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
-    draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
+    skip_scale_lbl =
+        dyn_draw_readout &&
+        scale_lbl_x + scale_lbl_w > dyn_dr_box_left &&
+        scale_lbl_x < dyn_dr_box_right &&
+        scale_lbl_y + scale_lbl_h > dyn_dr_box_top &&
+        scale_lbl_y < dyn_dr_box_bottom;
+    !skip_scale_lbl ? draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
 );
 
 // ----- Non-LUFS dynamic range percentile scope (Peak/RMS and K modes) -----
@@ -966,68 +1101,9 @@ dyn_scope_ready = 0;
     );
 );
 
-// ----- RMS/LUFS dynamic range history graph overlay -----
-dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter_w > 4 ? (
-    dyn_min_n = dyn_scope_ready ? ((dyn_scope_low_idx + 0.5) / dyn_bins) : min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
-    dyn_max_n = dyn_scope_ready ? ((dyn_scope_high_idx + 0.5) / dyn_bins) : min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
-    dyn_y_top = max(floor(meter_bottom - dyn_max_n * meter_h + 0.5), meter_top);
-    dyn_y_bottom = min(floor(meter_bottom - dyn_min_n * meter_h + 0.5), meter_bottom);
-    dyn_line_h = max(floor(meter_h / dyn_bins + 0.999), 1);
-    dyn_wave_w_max = max(floor(meter_w * 0.5 + 0.5), 1);
-
-    i = 0;
-    loop(dyn_bins,
-        dyn_bin_v = dyn_hist[i];
-        dyn_bin_in_scope = !dyn_scope_ready || (i >= dyn_scope_low_idx && i <= dyn_scope_high_idx);
-        dyn_bin_v > 0 && dyn_bin_in_scope ? (
-            dyn_bin_n = (i + 0.5) / dyn_bins;
-            dyn_k = scale_min + dyn_bin_n * scale_span;
-            dyn_y = floor(meter_bottom - dyn_bin_n * meter_h + 0.5);
-
-            dyn_y >= dyn_y_top && dyn_y <= dyn_y_bottom ? (
-                dyn_wave_ref = dyn_scope_ready ? dyn_scope_hist_peak : dyn_hist_peak;
-                dyn_wave_ref = max(dyn_wave_ref, 30);
-                dyn_wave_n = min(dyn_bin_v / dyn_wave_ref, 1);
-                dyn_wave_half_w = max(floor(dyn_wave_w_max * dyn_wave_n + 0.5), 1);
-                dyn_wave_x = max(floor(meter_mid - dyn_wave_half_w + 0.5), meter_left);
-                dyn_wave_r = min(floor(meter_mid + dyn_wave_half_w + 0.5), meter_right);
-                dyn_line_y = min(max(floor(dyn_y - dyn_line_h * 0.5 + 0.5), meter_top), meter_bottom - dyn_line_h + 1);
-
-                non_k_mode ? (
-                    dyn_col_r = 0.18;
-                    dyn_col_g = 0.70;
-                    dyn_col_b = 1.00;
-                ) : dyn_k >= thresh_red ? (
-                    dyn_col_r = 1.00;
-                    dyn_col_g = 0.22;
-                    dyn_col_b = 0.22;
-                ) : dyn_k >= thresh_yellow ? (
-                    dyn_col_r = 1.00;
-                    dyn_col_g = 0.86;
-                    dyn_col_b = 0.20;
-                ) : (
-                    dyn_col_r = 0.16;
-                    dyn_col_g = 0.95;
-                    dyn_col_b = 0.42;
-                );
-
-                gfx_set(dyn_col_r, dyn_col_g, dyn_col_b, 0.38 + 0.52 * dyn_wave_n);
-                gfx_rect(dyn_wave_x, dyn_line_y, dyn_wave_r - dyn_wave_x, dyn_line_h);
-            );
-        );
-        i += 1;
-    );
-);
 
 // ----- Range readout above 0 dB line (LRA in LUFS modes) -----
-dyn_zero_tick_idx = (0 - scale_min) / scale_step;
-dyn_zero_tick_nearest = floor(dyn_zero_tick_idx + 0.5);
-dyn_zero_line_visible =
-    scale_min <= 0 &&
-    scale_max >= 0 &&
-    (abs(dyn_zero_tick_idx - dyn_zero_tick_nearest) < 0.001 || abs(scale_max) < 0.001);
-
-dyn_history_on && dyn_zero_line_visible ? (
+dyn_history_on ? (
     dyn_readout_ready = 0;
 
     lufs_mode ? (
@@ -1101,18 +1177,20 @@ dyn_history_on && dyn_zero_line_visible ? (
 
     dyn_readout_ready ? (
         sprintf(#dyn_dr_lbl, "%.1f", dyn_range_db);
-        gfx_measurestr(#dyn_dr_lbl, dyn_dr_lbl_w, dyn_dr_lbl_h);
 
-        dyn_zero_y = floor(meter_bottom - meter_h * ((0 - scale_min) / scale_span) + 0.5);
-        dyn_dr_y = floor(dyn_zero_y - dyn_dr_lbl_h - 2 + 0.5);
-
-        dyn_dr_y >= meter_top ? (
-            dyn_dr_x = floor(meter_mid - dyn_dr_lbl_w * 0.5 + 0.5);
-            dyn_dr_lbl_w <= meter_w ? dyn_dr_x = min(max(dyn_dr_x, meter_left), meter_right - dyn_dr_lbl_w);
-            draw_outlined_text(#dyn_dr_lbl, dyn_dr_x, dyn_dr_y, 0.95);
-        );
+        dyn_readout_min_n = dyn_scope_ready ? ((dyn_scope_low_idx + 0.5) / dyn_bins) : min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
+        dyn_readout_max_n = dyn_scope_ready ? ((dyn_scope_high_idx + 0.5) / dyn_bins) : min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
+        dyn_readout_y_top = max(floor(meter_bottom - dyn_readout_max_n * meter_h + 0.5), meter_top);
+        dyn_readout_y_bottom = min(floor(meter_bottom - dyn_readout_min_n * meter_h + 0.5), meter_bottom);
+        dyn_draw_readout = 1;
+    ) : (
+        dyn_draw_readout = 0;
     );
+) : (
+    dyn_draw_readout = 0;
 );
+
+dyn_readout_font = 14;
 
 //------------------------------------------------
 // Bottom Overlay Readout (L/R peak + RMS)
@@ -1169,6 +1247,7 @@ slider5 > 0 ? (
         readout_font -= 1;
     );
 
+    dyn_readout_font = readout_font + 1;
     gfx_measurestr(#ov_l, ov_l_w, ov_l_h);
     gfx_measurestr(#ov_r, ov_r_w, ov_r_h);
 
@@ -1236,6 +1315,20 @@ slider5 > 0 ? (
         gfx_measurestr(#crest_top_r, crest_top_r_w, crest_top_r_h);
         draw_outlined_text(#crest_top_r, crest_center_r - crest_top_r_w * 0.5, crest_text_y, crest_text_alpha_r);
     );
+);
+
+dyn_draw_readout ? (
+    gfx_setfont(2,"Arial",dyn_readout_font);
+    gfx_measurestr(#dyn_dr_lbl, dyn_dr_lbl_w, dyn_dr_lbl_h);
+    dyn_dr_x = meter_left + floor((meter_w - dyn_dr_lbl_w) * 0.5 + 0.5);
+    dyn_dr_y_target = floor((dyn_readout_y_top + dyn_readout_y_bottom - dyn_dr_lbl_h) * 0.5 + 0.5);
+    dyn_dr_y_target = min(max(dyn_dr_y_target, meter_top), meter_bottom - dyn_dr_lbl_h);
+    dyn_dr_y_smoothed = dyn_dr_y_smoothed + (dyn_dr_y_target - dyn_dr_y_smoothed) * 0.18;
+    dyn_dr_y = floor(dyn_dr_y_smoothed + 0.5);
+
+    gfx_set(0, 0, 0, 0.80);
+    gfx_rect(dyn_dr_x - 5, dyn_dr_y - 2, dyn_dr_lbl_w + 10, dyn_dr_lbl_h + 4, 1);
+    draw_outlined_text(#dyn_dr_lbl, dyn_dr_x, dyn_dr_y, 0.95);
 );
 
 // Mouse over: draw pink line and dB value
