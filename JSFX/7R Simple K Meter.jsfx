@@ -1,9 +1,9 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.20
+version: 1.21
 about: A simple K meter JSFX
-changelog:  - added DR/Loudness Range graph
-            - Improved tranport state and drawing behaviour
+changelog:  - Percentile based DR for peak/RMS
+            - Improved LUFS DR accuracy
 options:no_meter
 
 
@@ -557,6 +557,7 @@ function draw_outlined_text(str, x, y, a)
 
 // ----- K reference -----
 normal_mode = slider1 == 3;
+peak_rms_mode = slider1 == 3;
 lufs_m_mode = slider1 == 4;
 lufs_s_mode = slider1 == 5;
 lufs_mode = slider1 >= 4;
@@ -676,6 +677,8 @@ dyn_value_k = lufs_m_mode ? lufs_momentary_db :
               lufs_s_mode ? lufs_short_db :
                             max(rms_k_l, rms_k_r);
 
+// Peak/RMS (and K modes) use the same percentile-based scope as LUFS for
+// dynamic range calculation and graph visualization.
 dyn_update_active = meter_ready > 0 && dyn_gfx_is_running && !(silence_l && silence_r) && max(vis_alpha_l, vis_alpha_r) > 0.02;
 dyn_update_active ? (
     dyn_have_hist <= 0 ? (
@@ -916,10 +919,57 @@ top_tick_needed ? (
     draw_outlined_text(#scale_lbl, scale_lbl_x, scale_lbl_y, 0.95);
 );
 
+// ----- Non-LUFS dynamic range percentile scope (Peak/RMS and K modes) -----
+dyn_scope_ready = 0;
+!lufs_mode && dyn_have_hist > 0 ? (
+    dyn_total_count = 0;
+
+    i = 0;
+    loop(dyn_bins,
+        dyn_total_count += dyn_hist[i];
+        i += 1;
+    );
+
+    dyn_total_count >= 3 ? (
+        dyn_low_rank = floor((dyn_total_count - 1) * 0.10 + 0.5) + 1;
+        dyn_high_rank = floor((dyn_total_count - 1) * 0.95 + 0.5) + 1;
+        dyn_cum = 0;
+        dyn_low_found = 0;
+        dyn_high_found = 0;
+
+        i = 0;
+        loop(dyn_bins,
+            dyn_bin_v = dyn_hist[i];
+            dyn_bin_v > 0 ? (
+                dyn_cum += dyn_bin_v;
+                !dyn_low_found && dyn_cum >= dyn_low_rank ? (
+                    dyn_scope_low_idx = i;
+                    dyn_low_found = 1;
+                );
+                !dyn_high_found && dyn_cum >= dyn_high_rank ? (
+                    dyn_scope_high_idx = i;
+                    dyn_high_found = 1;
+                );
+            );
+            i += 1;
+        );
+
+        dyn_low_found && dyn_high_found ? (
+            dyn_scope_ready = 1;
+            dyn_scope_hist_peak = 0;
+            i = dyn_scope_low_idx;
+            loop(dyn_scope_high_idx - dyn_scope_low_idx + 1,
+                dyn_hist[i] > dyn_scope_hist_peak ? dyn_scope_hist_peak = dyn_hist[i];
+                i += 1;
+            );
+        );
+    );
+);
+
 // ----- RMS/LUFS dynamic range history graph overlay -----
 dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter_w > 4 ? (
-    dyn_min_n = min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
-    dyn_max_n = min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
+    dyn_min_n = dyn_scope_ready ? ((dyn_scope_low_idx + 0.5) / dyn_bins) : min(max((dyn_min_k - scale_min) / scale_span, 0), 1);
+    dyn_max_n = dyn_scope_ready ? ((dyn_scope_high_idx + 0.5) / dyn_bins) : min(max((dyn_max_k - scale_min) / scale_span, 0), 1);
     dyn_y_top = max(floor(meter_bottom - dyn_max_n * meter_h + 0.5), meter_top);
     dyn_y_bottom = min(floor(meter_bottom - dyn_min_n * meter_h + 0.5), meter_bottom);
     dyn_line_h = max(floor(meter_h / dyn_bins + 0.999), 1);
@@ -928,13 +978,15 @@ dyn_history_on && dyn_have_hist > 0 && dyn_hist_peak > 0 && meter_h > 4 && meter
     i = 0;
     loop(dyn_bins,
         dyn_bin_v = dyn_hist[i];
-        dyn_bin_v > 0 ? (
+        dyn_bin_in_scope = !dyn_scope_ready || (i >= dyn_scope_low_idx && i <= dyn_scope_high_idx);
+        dyn_bin_v > 0 && dyn_bin_in_scope ? (
             dyn_bin_n = (i + 0.5) / dyn_bins;
             dyn_k = scale_min + dyn_bin_n * scale_span;
             dyn_y = floor(meter_bottom - dyn_bin_n * meter_h + 0.5);
 
             dyn_y >= dyn_y_top && dyn_y <= dyn_y_bottom ? (
-                dyn_wave_ref = max(dyn_hist_peak, 30);
+                dyn_wave_ref = dyn_scope_ready ? dyn_scope_hist_peak : dyn_hist_peak;
+                dyn_wave_ref = max(dyn_wave_ref, 30);
                 dyn_wave_n = min(dyn_bin_v / dyn_wave_ref, 1);
                 dyn_wave_half_w = max(floor(dyn_wave_w_max * dyn_wave_n + 0.5), 1);
                 dyn_wave_x = max(floor(meter_mid - dyn_wave_half_w + 0.5), meter_left);
@@ -1041,25 +1093,10 @@ dyn_history_on && dyn_zero_line_visible ? (
                 );
             );
         );
-    ) : dyn_have_hist > 0 ? (
-        dyn_pop_min_idx = dyn_bins;
-        dyn_pop_max_idx = -1;
-        dyn_pop_min_hits = 3;
-
-        i = 0;
-        loop(dyn_bins,
-            dyn_hist[i] >= dyn_pop_min_hits ? (
-                i < dyn_pop_min_idx ? dyn_pop_min_idx = i;
-                i > dyn_pop_max_idx ? dyn_pop_max_idx = i;
-            );
-            i += 1;
-        );
-
-        dyn_pop_max_idx >= dyn_pop_min_idx ? (
-            dyn_bin_db = scale_span / dyn_bins;
-            dyn_range_db = (dyn_pop_max_idx - dyn_pop_min_idx + 1) * dyn_bin_db;
-            dyn_readout_ready = 1;
-        );
+    ) : dyn_scope_ready ? (
+        dyn_bin_db = scale_span / dyn_bins;
+        dyn_range_db = max((dyn_scope_high_idx - dyn_scope_low_idx) * dyn_bin_db, 0);
+        dyn_readout_ready = 1;
     );
 
     dyn_readout_ready ? (
