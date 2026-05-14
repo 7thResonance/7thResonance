@@ -1,9 +1,8 @@
 desc:7R K Meter
 author:7thResonance
-version: 1.22
+version: 1.23
 about: A simple K meter JSFX
-changelog:  - Moved DR value readout the middle of graph
-            - Shadow for ther DR graph.
+changelog:  - 0 DB formatting
 options:no_meter
 
 
@@ -1004,7 +1003,7 @@ loop(steps + 1,
     fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
 
     !(slider5 > 0 && i == 0) ? (
-        sprintf(#scale_lbl, "%+d", k_val);
+        k_val == 0 ? sprintf(#scale_lbl, "0") : sprintf(#scale_lbl, "%+d", k_val);
         gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
         scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
         scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
@@ -1041,7 +1040,7 @@ top_tick_needed ? (
     gfx_set(0.62, 0.62, 0.62, 0.55);
     fill_hit_l ? gfx_line(meter_left, y, meter_mid, y);
     fill_hit_r ? gfx_line(meter_mid, y, meter_left + meter_w_line, y);
-    sprintf(#scale_lbl, "%+d", k_val);
+    k_val == 0 ? sprintf(#scale_lbl, "0") : sprintf(#scale_lbl, "%+d", k_val);
     gfx_measurestr(#scale_lbl, scale_lbl_w, scale_lbl_h);
     scale_lbl_x = meter_left + (meter_w - scale_lbl_w) * 0.5;
     scale_lbl_y = floor(y_pix - scale_lbl_h * 0.5 + 0.5);
