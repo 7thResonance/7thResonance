@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="096f93124e9f7dfe270d457ade578c4a05c4ad08">
+<index version="1" name="7thResonance" commit="6967de1bb5dc08d22ea952d916743e575a5d61e6">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -184,6 +184,11 @@
         <changelog><![CDATA[- added DR/Loudness Range graph
 - Improved tranport state and drawing behaviour]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/096f93124e9f7dfe270d457ade578c4a05c4ad08/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
+      </version>
+      <version name="1.21" author="7thResonance" time="2026-05-14T20:12:04Z">
+        <changelog><![CDATA[- Percentile based DR for peak/RMS
+- Improved LUFS DR accuracy]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/6967de1bb5dc08d22ea952d916743e575a5d61e6/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
