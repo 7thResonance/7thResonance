@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="179bf24458291ab26a2cab67cab3f759ce2c087a">
+<index version="1" name="7thResonance" commit="5cce17ae22b0493f028dfada525a3a67bfd1e52f">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -265,6 +265,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.10" author="7thResonance" time="2026-06-03T21:15:35Z">
         <changelog><![CDATA[- 7R weighting mode changes (beta)]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/179bf24458291ab26a2cab67cab3f759ce2c087a/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
+      </version>
+      <version name="1.11" author="7thResonance" time="2026-06-03T21:40:07Z">
+        <changelog><![CDATA[- Graph proptions adjusted]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/5cce17ae22b0493f028dfada525a3a67bfd1e52f/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
   </category>
