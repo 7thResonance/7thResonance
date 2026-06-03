@@ -1,15 +1,14 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.9
+version: 1.10
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: - spectrum freeze bug fix
-           - 7R weighting mode changes (beta)
-           - Autofreeze bug fix
+changelog: - 7R weighting mode changes (beta)
+           
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -222,42 +221,37 @@ function update_7r_coeffs()
   fs = max(srate, 1);
   fmax = fs * 0.49;
 
-  // 7R stage 1: ITU-style low-frequency weighting, 6 dB/oct below 1 kHz.
-  // Keep hp2 as pass-through and use the 1-pole HP stage only.
-  fc = min(1000, fmax);
-  r7_hp2_b0 = 1;
-  r7_hp2_b1 = 0;
-  r7_hp2_b2 = 0;
-  r7_hp2_a1 = 0;
-  r7_hp2_a2 = 0;
-
-  rc = 1 / (2 * $pi * fc);
-  dt = 1 / fs;
-  r7_hp1_alpha = rc / (rc + dt);
-  w0 = 2 * $pi * fc / fs;
-  hp_num = 2 * r7_hp1_alpha * sin(w0 * 0.5);
-  hp_den = sqrt(sqr(1 - r7_hp1_alpha * cos(w0)) + sqr(r7_hp1_alpha * sin(w0)));
-  r7_hp1_gain = 1 / max(hp_num / max(hp_den, 0.0000001), 0.0000001);
-
-  // 7R stage 2: +6 dB bell at 3500 Hz, Q 0.70
-  fc = min(3500, fmax);
-  q = 0.70;
-  A = 10^(6/40);
+  // 7R stage 1a: 12 dB/octave (2nd-order) high-pass at 450 Hz
+  fc = min(150, fmax);
+  q = 0.707;  // Butterworth response
+  A = 1;  // unity gain for HP
   w0 = 2 * $pi * fc / fs;
   cw = cos(w0);
   sw = sin(w0);
   alpha = sw / (2 * q);
-  a0 = 1 + alpha / A;
-  r7_pk_b0 = (1 + alpha * A) / a0;
-  r7_pk_b1 = (-2 * cw) / a0;
-  r7_pk_b2 = (1 - alpha * A) / a0;
-  r7_pk_a1 = (-2 * cw) / a0;
-  r7_pk_a2 = (1 - alpha / A) / a0;
+  a0 = 1 + alpha;
+  
+  // High-pass topology (correct): (1 + cos(w0))/2 for b0, -(1 + cos(w0)) for b1, (1 + cos(w0))/2 for b2
+  r7_hp2_b0 = (1 + cw) / 2 / a0;
+  r7_hp2_b1 = -(1 + cw) / a0;
+  r7_hp2_b2 = (1 + cw) / 2 / a0;
+  r7_hp2_a1 = -2 * cw / a0;
+  r7_hp2_a2 = (1 - alpha) / a0;
+
+  // 7R stage 1b: makeup gain for high-pass at Nyquist
+  r7_hp1_gain = 1;
+
+  // 7R stage 2: bypass 3.5 kHz bell boost
+  r7_pk_b0 = 1;
+  r7_pk_b1 = 0;
+  r7_pk_b2 = 0;
+  r7_pk_a1 = 0;
+  r7_pk_a2 = 0;
 
   // 7R stage 3: +6 dB high shelf at 7500 Hz, slope S mapped from Q=0.70
-  fc = min(7500, fmax);
+  fc = min(4500, fmax);
   S = 0.70;
-  A = 10^(6/40);
+  A = 4 ;
   sqrtA = sqrt(A);
   w0 = 2 * $pi * fc / fs;
   cw = cos(w0);
@@ -315,6 +309,9 @@ slider9 != old_itu ? (
     i += 1;
   );
   reset_7r_states();
+  // Reset both normalization values when weighting mode changes to get correct peak detection
+  norm_ref = 0;
+  norm_offset_hold = 0;
 );
 update_7r_coeffs();
 slider10 != old_rms ? (
@@ -331,8 +328,9 @@ slider12 != old_norm ? (
         norm_ref = 0;
         norm_offset_hold = 0;
     ) : (
-        // Turning ON normalisation
-        norm_ref = norm_ref;  // no-op required
+        // Turning ON normalisation - initialize to current peak on next frame
+        norm_ref = 0;
+        norm_offset_hold = 0;
     );
 );
 slider14 != old_auto ? (
@@ -436,16 +434,13 @@ slider9 == 1 ? (
   filtered_r = y2_r;
 ) : slider9 == 2 ? (
   // 7R weighting
-  // Left: HP(6dB) + bell + high shelf
+  // Left: 2-pole 12dB/octave HP at 450Hz + high shelf
   u0_l = spl0 - r7_hp2_a1 * r7_z_l0_u1 - r7_hp2_a2 * r7_z_l0_u2;
   y0_l = r7_hp2_b0 * u0_l + r7_hp2_b1 * r7_z_l0_u1 + r7_hp2_b2 * r7_z_l0_u2;
   r7_z_l0_u2 = r7_z_l0_u1;
   r7_z_l0_u1 = u0_l;
-  hp1_in_l = y0_l;
-  r7_hp1_raw_l = r7_hp1_alpha * (r7_hp1_y_l + y0_l - r7_hp1_x_l);
-  r7_hp1_x_l = hp1_in_l;
-  r7_hp1_y_l = r7_hp1_raw_l;
-  y0_l = r7_hp1_raw_l * r7_hp1_gain;
+  // Apply hp1 gain as makeup gain since hp1 is now bypassed
+  y0_l *= r7_hp1_gain;
 
   u1_l = y0_l - r7_pk_a1 * r7_z_l1_u1 - r7_pk_a2 * r7_z_l1_u2;
   y1_l = r7_pk_b0 * u1_l + r7_pk_b1 * r7_z_l1_u1 + r7_pk_b2 * r7_z_l1_u2;
@@ -463,11 +458,8 @@ slider9 == 1 ? (
   y0_r = r7_hp2_b0 * u0_r + r7_hp2_b1 * r7_z_r0_u1 + r7_hp2_b2 * r7_z_r0_u2;
   r7_z_r0_u2 = r7_z_r0_u1;
   r7_z_r0_u1 = u0_r;
-  hp1_in_r = y0_r;
-  r7_hp1_raw_r = r7_hp1_alpha * (r7_hp1_y_r + y0_r - r7_hp1_x_r);
-  r7_hp1_x_r = hp1_in_r;
-  r7_hp1_y_r = r7_hp1_raw_r;
-  y0_r = r7_hp1_raw_r * r7_hp1_gain;
+  // Apply hp1 gain as makeup gain since hp1 is now bypassed
+  y0_r *= r7_hp1_gain;
 
   u1_r = y0_r - r7_pk_a1 * r7_z_r1_u1 - r7_pk_a2 * r7_z_r1_u2;
   y1_r = r7_pk_b0 * u1_r + r7_pk_b1 * r7_z_r1_u1 + r7_pk_b2 * r7_z_r1_u2;
