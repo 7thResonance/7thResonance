@@ -1,13 +1,13 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.10
+version: 1.11
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: - 7R weighting mode changes (beta)
+changelog: - Graph proptions adjusted
            
 
 //tags: analysis FFT meter spectrum
@@ -299,6 +299,40 @@ function apply_octave_smoothing(num_bins, half_ratio)
   );
 );
 
+function freq_to_screen_pos_anchored(freq)
+  local(fmax, percent)
+(
+  fmax = srate * 0.49;
+  freq < 10 ? freq = 10;
+  
+  freq <= 100 ? (
+    percent = log(freq/10) / log(10) * 0.33;
+  ) : freq <= 10000 ? (
+    percent = 0.33 + (log(freq/100) / log(100)) * 0.47;
+  ) : (
+    percent = 0.80 + (log(freq/10000) / log(fmax/10000)) * 0.20;
+  );
+  
+  percent * gfx_w;
+);
+
+function screen_pos_to_freq_anchored(screen_x)
+  local(fmax, percent, freq)
+(
+  fmax = srate * 0.49;
+  percent = screen_x / max(gfx_w, 1);
+  
+  percent <= 0.33 ? (
+    freq = 10 * (10 ^ (percent / 0.33));
+  ) : percent <= 0.80 ? (
+    freq = 100 * (100 ^ ((percent - 0.33) / 0.47));
+  ) : (
+    freq = 10000 * (fmax / 10000) ^ ((percent - 0.80) / 0.20);
+  );
+  
+  freq;
+);
+
 
 @slider
 old_w=0;
@@ -559,7 +593,7 @@ function cycle_slider(x, y, z, dx)
 
 function draw_frozen_spectrum()
   local(i, tx, lx, ty, ly, tx0, lx0, fill_slmin, fill_slast)
-  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,wsc,sc,Kdb,slider8,display_main_db,display_side_db,has_spectrum_data)
+  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,sc,Kdb,slider8,display_main_db,display_side_db,has_spectrum_data,srate)
 (
   has_spectrum_data ? (
     i=0;
@@ -568,7 +602,7 @@ function draw_frozen_spectrum()
     fill_slast=0;
     loop(fftsize*0.5,
       ty = (display_main_db[i] / Kdb) * -0.5 * sc + 20;
-      tx = log(1.0 + i * xscale) * wsc;
+      tx = freq_to_screen_pos_anchored(i * srate / fftsize);
 
       i ? (
         gfx_r=0; gfx_g=0; gfx_b=1;
@@ -602,7 +636,7 @@ function draw_frozen_spectrum()
       gfx_a=0.45;
       loop(fftsize*0.5,
         ty = (display_side_db[i] / Kdb) * -0.5 * sc + 20;
-        tx = log(1.0 + i * xscale) * wsc;
+        tx = freq_to_screen_pos_anchored(i * srate / fftsize);
         i ? (
           gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
         ) : (
@@ -878,14 +912,12 @@ small_mode||while(
 );
 
 
-wsc=gfx_w/log(1+400);
-
-// draw vert grid
+// draw vert grid (using anchored frequency scaling)
 f=20;
 gfx_x+=4;
 lx=gfx_x;
 small_mode||while(
-  tx = log(1.0+(f/srate*2.0)*400)*wsc;
+  tx = freq_to_screen_pos_anchored(f);
   dotext = tx > gfx_x && f!=40 && f!=4000 && f != 15000 &&
      (f<400 || f >= 1000 || f == 500) && (f<6000 || f>=10000);
   tx > lx ? ( lx=tx+4; gfx_line(tx,0,tx,gfx_h - (dotext ? 0 : gfx_texth+2),0); );
@@ -1048,7 +1080,7 @@ num_bins = fftsize * 0.5;
       buf2+=1;
     );
     ty2=ang*ascale + gfx_h*0.5;
-    tx = log(1.0+i*xscale)*wsc;
+    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
     i ? ( gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1; gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1) );
     lx=tx; ly2=ty2;
     i+=1;
@@ -1159,7 +1191,7 @@ slider12 > 0.5 ? (
 
     display_main_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
-    tx = log(1.0 + i * xscale) * wsc;
+    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
 
     i ? 
     ( 
@@ -1269,7 +1301,7 @@ slider12 > 0.5 ? (
 
     display_side_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
-    tx = log(1.0 + i * xscale) * wsc;
+    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
 
     i ? (
       gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
@@ -1283,7 +1315,8 @@ slider12 > 0.5 ? (
     ); // end slider8 > 0.5 conditional
 
     has_spectrum_data && mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
-      hover_bin = (exp(max(min(mouse_x, gfx_w), 0) / wsc) - 1) / xscale;
+      hover_freq = screen_pos_to_freq_anchored(mouse_x);
+      hover_bin = hover_freq / (srate / fftsize);
       hover_bin = min(max(hover_bin, 0), num_bins - 1);
       hover_bin0 = floor(hover_bin);
       hover_bin1 = min(hover_bin0 + 1, num_bins - 1);
