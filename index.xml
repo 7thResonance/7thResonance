@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="e60c5a6c8d83e11de8c6a642ebb3fef231d5aaaa">
+<index version="1" name="7thResonance" commit="100410f0537ec49e9b75ec03d5df7b36e419f03c">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -398,6 +398,23 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
 - On playback/recording end, last chord extends to fill the measure.
 - Defaulted to item mode]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/0a23833a5e700221e622ffe4e54f9581df92790b/Utilities/7R%20Chord%20Item%20Recorder.lua</source>
+      </version>
+    </reapack>
+    <reapack name="7R Fade under mouse cursor.lua" type="script" desc="7R Fade under mouse cursor">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Release the shortcut to fade the item under the mouse, or all selected items when more than one item is selected. Before the item midpoint sets a fade-in; after it sets a fade-out.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Hold the shortcut for more than 50 ms and move left/right to override the midpoint decision on release. Left movement applies fade-ins; right movement applies fade-outs.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 If a target overlaps another item on the same track at or near the mouse position, the script sets mirrored crossfade-facing fades.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Requires SWS for accurate mouse timeline position. Hold detection for keyboard shortcuts requires js_ReaScriptAPI.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="7thResonance" time="2026-06-02T15:23:32Z">
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/100410f0537ec49e9b75ec03d5df7b36e419f03c/Utilities/7R%20Fade%20under%20mouse%20cursor.lua</source>
       </version>
     </reapack>
     <reapack name="7R FX Link (Relative).lua" type="script" desc="7R FX Link (Relative) [Deprecated]">
