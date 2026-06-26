@@ -1,13 +1,13 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.11
+version: 1.12
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: - Graph proptions adjusted
+changelog: - 7R weighting tweak
            
 
 //tags: analysis FFT meter spectrum
@@ -241,17 +241,33 @@ function update_7r_coeffs()
   // 7R stage 1b: makeup gain for high-pass at Nyquist
   r7_hp1_gain = 1;
 
-  // 7R stage 2: bypass 3.5 kHz bell boost
-  r7_pk_b0 = 1;
-  r7_pk_b1 = 0;
-  r7_pk_b2 = 0;
-  r7_pk_a1 = 0;
-  r7_pk_a2 = 0;
+  // 7R stage 2: +18 dB bell at 3.5 kHz
+  
+  fc = min(2000, fmax);
+  q = 0.45;              // Bell width
+  gain = 5;            // dB
+  
+  A = pow(10, gain / 40);
+  
+  w0 = 2 * $pi * fc / fs;
+  cw = cos(w0);
+  sw = sin(w0);
+  
+  alpha = sw / (2 * q);
+  
+  a0 = 1 + alpha / A;
+  
+  r7_pk_b0 = (1 + alpha * A) / a0;
+  r7_pk_b1 = (-2 * cw) / a0;
+  r7_pk_b2 = (1 - alpha * A) / a0;
+  
+  r7_pk_a1 = (-2 * cw) / a0;
+  r7_pk_a2 = (1 - alpha / A) / a0;
 
   // 7R stage 3: +6 dB high shelf at 7500 Hz, slope S mapped from Q=0.70
   fc = min(4500, fmax);
   S = 0.70;
-  A = 4 ;
+  A = 3.2 ;
   sqrtA = sqrt(A);
   w0 = 2 * $pi * fc / fs;
   cw = cos(w0);
