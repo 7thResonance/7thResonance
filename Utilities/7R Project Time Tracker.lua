@@ -1,8 +1,8 @@
 --[[
 @description 7R Project Time Tracker
 @author 7thResonance
-@version 1.5
-@changelog - Excluded record arm state from active time to avoid inflating time when armed but not actually recording.
+@version 1.6
+@changelog - added reaper window and mouse movemeant detection for AFK detection
 @about
   Tracks active project time (editing / play / rec / armed). Stores time per-project using ProjExtState.
   Right-click window for options (reset, add minutes, font/size).
@@ -54,6 +54,9 @@ local last_proj_id = nil
 local last_state_change = 0
 local editing = false
 local last_edit_activity = 0
+local last_input_poll_time = reaper.time_precise()
+local last_mouse_x, last_mouse_y = reaper.GetMousePosition()
+local last_mouse_state = (reaper.JS_Mouse_GetState and reaper.JS_Mouse_GetState(-1)) or 0
 local add_minutes = 0
 
 local font = nil
@@ -170,6 +173,9 @@ local function load_time(proj)
   time_data.last_update = reaper.time_precise()
   time_data.last_save = time_data.last_update
   last_edit_activity = time_data.last_update
+  last_input_poll_time = time_data.last_update
+  last_mouse_x, last_mouse_y = reaper.GetMousePosition()
+  last_mouse_state = (reaper.JS_Mouse_GetState and reaper.JS_Mouse_GetState(-1)) or 0
   last_state_change = reaper.GetProjectStateChangeCount(proj)
   editing = false
 end
@@ -350,10 +356,106 @@ local function get_project_id(proj, proj_fn)
   return tostring(proj) .. "|" .. (proj_fn or "")
 end
 
+local function hwnd_matches(a, b)
+  return a ~= nil and b ~= nil and tostring(a) == tostring(b)
+end
+
+local function is_reaper_window(hwnd)
+  local main_hwnd = reaper.GetMainHwnd()
+  if not hwnd or not main_hwnd then return false end
+  if hwnd_matches(hwnd, main_hwnd) then return true end
+
+  if reaper.JS_Window_IsChild and reaper.JS_Window_IsChild(main_hwnd, hwnd) then
+    return true
+  end
+
+  if not reaper.JS_Window_GetParent then return false end
+
+  local seen = {}
+  local current = hwnd
+  for _ = 1, 16 do
+    local key = tostring(current)
+    if seen[key] then return false end
+    seen[key] = true
+
+    local parent = reaper.JS_Window_GetParent(current)
+    if not parent then break end
+    if hwnd_matches(parent, main_hwnd) then return true end
+    if reaper.JS_Window_IsChild and reaper.JS_Window_IsChild(main_hwnd, parent) then
+      return true
+    end
+
+    current = parent
+  end
+
+  return false
+end
+
+local function key_state_has_activity(state)
+  if type(state) ~= "string" then return false end
+
+  for i = 1, #state do
+    if state:byte(i) ~= 0 then return true end
+  end
+
+  return false
+end
+
+local function reaper_keyboard_window_is_active()
+  if reaper.JS_Window_GetFocus and is_reaper_window(reaper.JS_Window_GetFocus()) then
+    return true
+  end
+
+  if reaper.JS_Window_GetForeground and is_reaper_window(reaper.JS_Window_GetForeground()) then
+    return true
+  end
+
+  return false
+end
+
+local function update_reaper_input_activity(now)
+  local ts = now or reaper.time_precise()
+  local has_activity = false
+
+  if reaper.JS_Window_FromPoint then
+    local mouse_x, mouse_y = reaper.GetMousePosition()
+    local mouse_state = last_mouse_state or 0
+    if reaper.JS_Mouse_GetState then
+      mouse_state = reaper.JS_Mouse_GetState(-1)
+    end
+
+    local mouse_moved = last_mouse_x ~= nil and (mouse_x ~= last_mouse_x or mouse_y ~= last_mouse_y)
+    local mouse_changed = mouse_state ~= (last_mouse_state or 0)
+
+    if (mouse_moved or mouse_changed) and is_reaper_window(reaper.JS_Window_FromPoint(mouse_x, mouse_y)) then
+      has_activity = true
+    end
+
+    last_mouse_x = mouse_x
+    last_mouse_y = mouse_y
+    last_mouse_state = mouse_state
+  end
+
+  if reaper.JS_VKeys_GetDown then
+    local cutoff_time = last_input_poll_time or (ts - 0.25)
+    if reaper_keyboard_window_is_active() and key_state_has_activity(reaper.JS_VKeys_GetDown(cutoff_time)) then
+      has_activity = true
+    end
+  end
+
+  last_input_poll_time = ts
+  if has_activity then
+    last_edit_activity = ts
+  end
+
+  return has_activity
+end
+
 local function is_afk(proj, now)
   local playstate = reaper.GetPlayState()
   local playing = (playstate & 1) ~= 0
   local recording = (playstate & 4) ~= 0
+  local input_activity = update_reaper_input_activity(now)
 
   local current_state_change = reaper.GetProjectStateChangeCount(proj)
   if current_state_change > last_state_change then
@@ -364,7 +466,7 @@ local function is_afk(proj, now)
   local afk_seconds = tonumber(settings.afk_seconds) or 5
   if afk_seconds < 1 then afk_seconds = 1 end
   editing = ((now or reaper.time_precise()) - (last_edit_activity or 0)) <= afk_seconds
-  local active = playing or recording or editing
+  local active = playing or recording or editing or input_activity
   editing = false
   return not active
 end
