@@ -1,221 +1,970 @@
 --[[
 @description 7R Split MIDI item by Pitch (Copy all CC)
 @author 7thResonance
-@version 1.1
-@changelog - Copies Sends and recieves as well
+@version 1.2
+@changelog - was not working for some reason. fixed? i guess
 @about Creates tracks for each pitch in selected MIDI items, copying all CC and text events.
 --]]
 
 reaper.Undo_BeginBlock()
 reaper.PreventUIRefresh(1)
 
---------------------------------------------------
--- Utilities
---------------------------------------------------
+------------------------------------------------------------
+-- SETTINGS
+------------------------------------------------------------
 
-local function getNoteName(track, pitch)
-    local name = reaper.GetTrackMIDINoteNameEx(0, track, pitch, 0)
-    if name and name ~= "" then
-        return name:gsub("^%s+", ""):gsub("%s+$", "")
-    end
+local INCLUDE_TRACK_NAME = true
 
-    local noteNames = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" }
-    local n = noteNames[(pitch % 12) + 1]
-    local o = math.floor(pitch / 12) - 1
-    return n .. o
+
+------------------------------------------------------------
+-- PITCH NAME
+------------------------------------------------------------
+
+local function PitchName(pitch)
+
+    local names = {
+        "C", "C#", "D", "D#", "E", "F",
+        "F#", "G", "G#", "A", "A#", "B"
+    }
+
+    return names[(pitch % 12) + 1] ..
+           (math.floor(pitch / 12) - 1)
 end
 
-local sendReceiveParams = {
-    "B_MUTE",
-    "B_PHASE",
-    "B_MONO",
-    "D_VOL",
-    "D_PAN",
-    "D_PANLAW",
-    "I_SENDMODE",
-    "I_SRCCHAN",
-    "I_DSTCHAN",
-    "I_MIDIFLAGS",
-    "I_AUTOMODE"
-}
 
-local function copyRoutingParams(srcTrack, srcCat, srcIdx, dstTrack, dstCat, dstIdx)
-    for _, parm in ipairs(sendReceiveParams) do
-        local val = reaper.GetTrackSendInfo_Value(srcTrack, srcCat, srcIdx, parm)
-        reaper.SetTrackSendInfo_Value(dstTrack, dstCat, dstIdx, parm, val)
+------------------------------------------------------------
+-- TRACK NAME
+------------------------------------------------------------
+
+local function GetTrackName(track)
+
+    local _, name =
+        reaper.GetSetMediaTrackInfo_String(
+            track,
+            "P_NAME",
+            "",
+            false
+        )
+
+    if name == "" then
+        name = "MIDI"
     end
+
+    return name
 end
 
-local function cloneTrackSendsAndReceives(srcTrack, dstTrack)
-    local sendCount = reaper.GetTrackNumSends(srcTrack, 0)
-    for s = 0, sendCount - 1 do
-        local destTrack =
-            reaper.GetTrackSendInfo_Value(srcTrack, 0, s, "P_DESTTRACK")
-        if destTrack then
-            local newSendIdx = reaper.CreateTrackSend(dstTrack, destTrack)
-            copyRoutingParams(srcTrack, 0, s, dstTrack, 0, newSendIdx)
-        end
-    end
 
-    local recvCount = reaper.GetTrackNumSends(srcTrack, -1)
-    for r = 0, recvCount - 1 do
-        local recvSrcTrack =
-            reaper.GetTrackSendInfo_Value(srcTrack, -1, r, "P_SRCTRACK")
-        if recvSrcTrack then
-            reaper.CreateTrackSend(recvSrcTrack, dstTrack)
-            local newRecvIdx = reaper.GetTrackNumSends(dstTrack, -1) - 1
-            copyRoutingParams(srcTrack, -1, r, dstTrack, -1, newRecvIdx)
-        end
-    end
+------------------------------------------------------------
+-- ITEM BOUNDS
+------------------------------------------------------------
+
+local function GetItemBounds(item)
+
+    local position =
+        reaper.GetMediaItemInfo_Value(
+            item,
+            "D_POSITION"
+        )
+
+    local length =
+        reaper.GetMediaItemInfo_Value(
+            item,
+            "D_LENGTH"
+        )
+
+    return position, position + length
 end
 
---------------------------------------------------
--- Collect selected MIDI items grouped by track
---------------------------------------------------
 
-local itemsByTrack = {}
-local selCount = reaper.CountSelectedMediaItems(0)
-if selCount == 0 then return end
+------------------------------------------------------------
+-- COPY ITEM PROPERTIES
+------------------------------------------------------------
 
-for i = 0, selCount - 1 do
-    local item = reaper.GetSelectedMediaItem(0, i)
-    local take = reaper.GetActiveTake(item)
-    if take and reaper.TakeIsMIDI(take) then
-        local track = reaper.GetMediaItem_Track(item)
-        itemsByTrack[track] = itemsByTrack[track] or {}
-        table.insert(itemsByTrack[track], item)
-    end
-end
+local function CopyItemProperties(source, destination)
 
---------------------------------------------------
--- Process per source track
---------------------------------------------------
+    local properties = {
+        "D_SNAPOFFSET",
+        "D_FADEINLEN",
+        "D_FADEOUTLEN",
+        "D_FADEINLEN_AUTO",
+        "D_FADEOUTLEN_AUTO",
+        "D_VOL",
+        "D_PAN",
+        "D_PANLAW",
+        "B_MUTE",
+        "C_LOCK",
+        "C_AUTOSTRETCH",
+        "C_BEATATTACHMODE",
+        "I_CUSTOMCOLOR"
+    }
 
-for track, items in pairs(itemsByTrack) do
+    for _, property in ipairs(properties) do
 
-    if reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") ~= 1 then
-        reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", 1)
-    end
-
-    local parentIdx =
-        reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
-
-    local insertOffset = 1
-    local lastChildTrack = nil
-
-    for _, item in ipairs(items) do
-        local take = reaper.GetActiveTake(item)
-
-        local itemPos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-        local itemLen = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-        local itemEnd = itemPos + itemLen
-
-        reaper.SetMediaItemInfo_Value(item, "B_MUTE", 1)
-
-        local itemStartPPQ =
-            reaper.MIDI_GetPPQPosFromProjTime(take, itemPos)
-
-        local _, noteCount, ccCount, textCount =
-            reaper.MIDI_CountEvts(take)
-
-        local notesByPitch = {}
-
-        for n = 0, noteCount - 1 do
-            local _, _, mute, sPPQ, ePPQ, chan, pitch, vel =
-                reaper.MIDI_GetNote(take, n)
-
-            local ns = sPPQ - itemStartPPQ
-            local ne = ePPQ - itemStartPPQ
-
-            if ns >= 0 and ne > ns then
-                notesByPitch[pitch] = notesByPitch[pitch] or {}
-                table.insert(notesByPitch[pitch], {
-                    sPPQ = ns, ePPQ = ne,
-                    chan = chan, vel = vel, mute = mute
-                })
-            end
-        end
-
-        local ccEvents = {}
-        for c = 0, ccCount - 1 do
-            local _, _, mute, ppq, chan, msg2, msg3, msg4 =
-                reaper.MIDI_GetCC(take, c)
-            local nppq = ppq - itemStartPPQ
-            if nppq >= 0 then
-                ccEvents[#ccEvents+1] =
-                    {nppq, chan, msg2, msg3, msg4, mute}
-            end
-        end
-
-        local textEvents = {}
-        for t = 0, textCount - 1 do
-            local _, _, mute, ppq, typ, msg =
-                reaper.MIDI_GetTextSysexEvt(take, t)
-            local nppq = ppq - itemStartPPQ
-            if nppq >= 0 then
-                textEvents[#textEvents+1] =
-                    {nppq, typ, msg, mute}
-            end
-        end
-
-        for pitch, noteList in pairs(notesByPitch) do
-            local trackIdx = parentIdx + insertOffset
-            reaper.InsertTrackAtIndex(trackIdx, true)
-
-            local newTrack = reaper.GetTrack(0, trackIdx)
-            lastChildTrack = newTrack
-            insertOffset = insertOffset + 1
-
-            cloneTrackSendsAndReceives(track, newTrack)
-
-            reaper.GetSetMediaTrackInfo_String(
-                newTrack,
-                "P_NAME",
-                getNoteName(track, pitch),
-                true
+        local value =
+            reaper.GetMediaItemInfo_Value(
+                source,
+                property
             )
 
-            local newItem =
-                reaper.CreateNewMIDIItemInProj(
-                    newTrack, itemPos, itemEnd, false
-                )
+        reaper.SetMediaItemInfo_Value(
+            destination,
+            property,
+            value
+        )
+    end
+end
 
-            local newTake = reaper.GetActiveTake(newItem)
-            reaper.MIDI_DisableSort(newTake)
 
-            for _, n in ipairs(noteList) do
-                reaper.MIDI_InsertNote(
-                    newTake, false, n.mute,
-                    n.sPPQ, n.ePPQ, n.chan,
-                    pitch, n.vel, false
-                )
-            end
+------------------------------------------------------------
+-- GET PITCHES USED BY TAKE
+------------------------------------------------------------
 
-            for _, cc in ipairs(ccEvents) do
-                reaper.MIDI_InsertCC(
-                    newTake, false, cc[6],
-                    cc[1], cc[2], cc[3], cc[4], cc[5], false
-                )
-            end
+local function GetItemPitches(take)
 
-            for _, tx in ipairs(textEvents) do
-                reaper.MIDI_InsertTextSysexEvt(
-                    newTake, false, tx[4],
-                    tx[1], tx[2], tx[3], false
-                )
-            end
+    local pitches = {}
 
-            reaper.MIDI_Sort(newTake)
+    local _, note_count =
+        reaper.MIDI_CountEvts(take)
+
+    for i = 0, note_count - 1 do
+
+        local ok,
+              selected,
+              muted,
+              start_ppq,
+              end_ppq,
+              channel,
+              pitch,
+              velocity =
+            reaper.MIDI_GetNote(
+                take,
+                i
+            )
+
+        if ok then
+            pitches[pitch] = true
         end
     end
 
-    if lastChildTrack then
-        reaper.SetMediaTrackInfo_Value(lastChildTrack, "I_FOLDERDEPTH", -1)
+    return pitches
+end
+
+
+------------------------------------------------------------
+-- CREATE NEW MIDI ITEM
+------------------------------------------------------------
+
+local function CreateNewItem(
+    destination_track,
+    source_item
+)
+
+    local position, end_position =
+        GetItemBounds(source_item)
+
+    local new_item =
+        reaper.CreateNewMIDIItemInProj(
+            destination_track,
+            position,
+            end_position,
+            false
+        )
+
+    if not new_item then
+        return nil, nil
+    end
+
+    CopyItemProperties(
+        source_item,
+        new_item
+    )
+
+    local new_take =
+        reaper.GetActiveTake(new_item)
+
+    if not new_take then
+
+        reaper.DeleteTrackMediaItem(
+            destination_track,
+            new_item
+        )
+
+        return nil, nil
+    end
+
+    return new_item, new_take
+end
+
+
+------------------------------------------------------------
+-- COPY NOTES FOR ONE PITCH
+--
+-- SOURCE PPQ
+--     ↓
+-- PROJECT TIME
+--     ↓
+-- DESTINATION PPQ
+------------------------------------------------------------
+
+local function CopyNotes(
+    source_take,
+    destination_take,
+    wanted_pitch
+)
+
+    local _, note_count =
+        reaper.MIDI_CountEvts(
+            source_take
+        )
+
+    reaper.MIDI_DisableSort(
+        destination_take
+    )
+
+    for i = 0, note_count - 1 do
+
+        local ok,
+              selected,
+              muted,
+              start_ppq,
+              end_ppq,
+              channel,
+              pitch,
+              velocity =
+            reaper.MIDI_GetNote(
+                source_take,
+                i
+            )
+
+        if ok and pitch == wanted_pitch then
+
+            local start_time =
+                reaper.MIDI_GetProjTimeFromPPQPos(
+                    source_take,
+                    start_ppq
+                )
+
+            local end_time =
+                reaper.MIDI_GetProjTimeFromPPQPos(
+                    source_take,
+                    end_ppq
+                )
+
+            local destination_start_ppq =
+                reaper.MIDI_GetPPQPosFromProjTime(
+                    destination_take,
+                    start_time
+                )
+
+            local destination_end_ppq =
+                reaper.MIDI_GetPPQPosFromProjTime(
+                    destination_take,
+                    end_time
+                )
+
+            reaper.MIDI_InsertNote(
+                destination_take,
+                selected,
+                muted,
+                destination_start_ppq,
+                destination_end_ppq,
+                channel,
+                pitch,
+                velocity,
+                true
+            )
+        end
     end
 end
+
+
+------------------------------------------------------------
+-- COPY ALL CCs
+------------------------------------------------------------
+
+local function CopyCCs(
+    source_take,
+    destination_take
+)
+
+    local _, _, cc_count =
+        reaper.MIDI_CountEvts(
+            source_take
+        )
+
+    reaper.MIDI_DisableSort(
+        destination_take
+    )
+
+    for i = 0, cc_count - 1 do
+
+        local ok,
+              selected,
+              muted,
+              ppq,
+              chanmsg,
+              channel,
+              msg2,
+              msg3 =
+            reaper.MIDI_GetCC(
+                source_take,
+                i
+            )
+
+        if ok then
+
+            local project_time =
+                reaper.MIDI_GetProjTimeFromPPQPos(
+                    source_take,
+                    ppq
+                )
+
+            local destination_ppq =
+                reaper.MIDI_GetPPQPosFromProjTime(
+                    destination_take,
+                    project_time
+                )
+
+            reaper.MIDI_InsertCC(
+                destination_take,
+                selected,
+                muted,
+                destination_ppq,
+                chanmsg,
+                channel,
+                msg2,
+                msg3
+            )
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- COPY CC SHAPES
+------------------------------------------------------------
+
+local function CopyCCShapes(
+    source_take,
+    destination_take
+)
+
+    local _, _, cc_count =
+        reaper.MIDI_CountEvts(
+            source_take
+        )
+
+    for i = 0, cc_count - 1 do
+
+        local ok =
+            reaper.MIDI_GetCC(
+                source_take,
+                i
+            )
+
+        if ok then
+
+            local shape_ok,
+                  shape,
+                  tension =
+                reaper.MIDI_GetCCShape(
+                    source_take,
+                    i
+                )
+
+            if shape_ok then
+
+                reaper.MIDI_SetCCShape(
+                    destination_take,
+                    i,
+                    shape,
+                    tension,
+                    true
+                )
+            end
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- COPY TRACK COLOR
+------------------------------------------------------------
+
+local function CopyTrackColor(
+    source_track,
+    destination_track
+)
+
+    local color =
+        reaper.GetMediaTrackInfo_Value(
+            source_track,
+            "I_CUSTOMCOLOR"
+        )
+
+    reaper.SetMediaTrackInfo_Value(
+        destination_track,
+        "I_CUSTOMCOLOR",
+        color
+    )
+end
+
+
+------------------------------------------------------------
+-- COPY SEND PARAMETERS
+------------------------------------------------------------
+
+local function CopySendParameters(
+    source_track,
+    source_send,
+    destination_track,
+    destination_send
+)
+
+    local properties = {
+        "D_VOL",
+        "D_PAN",
+        "D_PANLAW",
+        "I_SENDMODE",
+        "I_SRCCHAN",
+        "I_DSTCHAN",
+        "I_MIDIFLAGS",
+        "B_MUTE",
+        "B_PHASE"
+    }
+
+    for _, property in ipairs(properties) do
+
+        local value =
+            reaper.GetTrackSendInfo_Value(
+                source_track,
+                0,
+                source_send,
+                property
+            )
+
+        if value ~= nil then
+
+            reaper.SetTrackSendInfo_Value(
+                destination_track,
+                0,
+                destination_send,
+                property,
+                value
+            )
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- COPY ORIGINAL SENDS
+------------------------------------------------------------
+
+local function CopyOriginalSends(
+    source_track,
+    destination_track
+)
+
+    local send_count =
+        reaper.GetTrackNumSends(
+            source_track,
+            0
+        )
+
+    for i = 0, send_count - 1 do
+
+        local destination =
+            reaper.GetTrackSendInfo_Value(
+                source_track,
+                0,
+                i,
+                "P_DESTTRACK"
+            )
+
+        if destination then
+
+            local new_send =
+                reaper.CreateTrackSend(
+                    destination_track,
+                    destination
+                )
+
+            if new_send >= 0 then
+
+                CopySendParameters(
+                    source_track,
+                    i,
+                    destination_track,
+                    new_send
+                )
+            end
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- COPY ORIGINAL RECEIVES
+--
+-- A REAPER receive is represented as a send on the
+-- source track, so find every source that sends to the
+-- original and duplicate that routing to the new track.
+------------------------------------------------------------
+
+local function CopyOriginalReceives(
+    original_track,
+    destination_track
+)
+
+    local track_count =
+        reaper.CountTracks(0)
+
+    for i = 0, track_count - 1 do
+
+        local source_track =
+            reaper.GetTrack(
+                0,
+                i
+            )
+
+        if source_track ~= destination_track then
+
+            local send_count =
+                reaper.GetTrackNumSends(
+                    source_track,
+                    0
+                )
+
+            for send_index = 0, send_count - 1 do
+
+                local destination =
+                    reaper.GetTrackSendInfo_Value(
+                        source_track,
+                        0,
+                        send_index,
+                        "P_DESTTRACK"
+                    )
+
+                if destination == original_track then
+
+                    local new_send =
+                        reaper.CreateTrackSend(
+                            source_track,
+                            destination_track
+                        )
+
+                    if new_send >= 0 then
+
+                        CopySendParameters(
+                            source_track,
+                            send_index,
+                            source_track,
+                            new_send
+                        )
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- FIND SIBLING INSERT POSITION
+------------------------------------------------------------
+
+local function GetSiblingInsertPosition(
+    source_track
+)
+
+    local source_index =
+        math.floor(
+            reaper.GetMediaTrackInfo_Value(
+                source_track,
+                "IP_TRACKNUMBER"
+            )
+        ) - 1
+
+    local folder_depth =
+        reaper.GetMediaTrackInfo_Value(
+            source_track,
+            "I_FOLDERDEPTH"
+        )
+
+    --------------------------------------------------------
+    -- Normal track / track inside folder.
+    --------------------------------------------------------
+
+    if folder_depth <= 0 then
+        return source_index + 1
+    end
+
+    --------------------------------------------------------
+    -- Source is a folder parent.
+    -- Skip all children.
+    --------------------------------------------------------
+
+    local level = folder_depth
+    local index = source_index + 1
+
+    local track_count =
+        reaper.CountTracks(0)
+
+    while index < track_count do
+
+        local track =
+            reaper.GetTrack(
+                0,
+                index
+            )
+
+        local depth =
+            reaper.GetMediaTrackInfo_Value(
+                track,
+                "I_FOLDERDEPTH"
+            )
+
+        level = level + depth
+
+        index = index + 1
+
+        if level <= 0 then
+            break
+        end
+    end
+
+    return index
+end
+
+
+------------------------------------------------------------
+-- PROCESS ONE SOURCE TRACK
+------------------------------------------------------------
+
+local function ProcessTrack(
+    source_track,
+    selected_items
+)
+
+    if #selected_items == 0 then
+        return
+    end
+
+    --------------------------------------------------------
+    -- Find every pitch used by the SELECTED items only.
+    --------------------------------------------------------
+
+    local pitches = {}
+
+    for _, data in ipairs(selected_items) do
+
+        local item_pitches =
+            GetItemPitches(
+                data.take
+            )
+
+        for pitch in pairs(item_pitches) do
+            pitches[pitch] = true
+        end
+    end
+
+    local pitch_list = {}
+
+    for pitch in pairs(pitches) do
+        pitch_list[#pitch_list + 1] = pitch
+    end
+
+    table.sort(pitch_list)
+
+    if #pitch_list == 0 then
+        return
+    end
+
+    --------------------------------------------------------
+    -- Create sibling tracks.
+    --------------------------------------------------------
+
+    local insert_position =
+        GetSiblingInsertPosition(
+            source_track
+        )
+
+    local source_name =
+        GetTrackName(source_track)
+
+    local destination_tracks = {}
+
+    for _, pitch in ipairs(pitch_list) do
+
+        reaper.InsertTrackAtIndex(
+            insert_position,
+            true
+        )
+
+        local track =
+            reaper.GetTrack(
+                0,
+                insert_position
+            )
+
+        ----------------------------------------------------
+        -- Not a folder.
+        ----------------------------------------------------
+
+        reaper.SetMediaTrackInfo_Value(
+            track,
+            "I_FOLDERDEPTH",
+            0
+        )
+
+        ----------------------------------------------------
+        -- Copy color.
+        ----------------------------------------------------
+
+        CopyTrackColor(
+            source_track,
+            track
+        )
+
+        ----------------------------------------------------
+        -- Name.
+        ----------------------------------------------------
+
+        local name
+
+        if INCLUDE_TRACK_NAME then
+
+            name =
+                source_name ..
+                " " ..
+                PitchName(pitch)
+
+        else
+
+            name =
+                PitchName(pitch)
+        end
+
+        reaper.GetSetMediaTrackInfo_String(
+            track,
+            "P_NAME",
+            name,
+            true
+        )
+
+        destination_tracks[pitch] = track
+
+        insert_position =
+            insert_position + 1
+    end
+
+
+    --------------------------------------------------------
+    -- Copy routing.
+    --------------------------------------------------------
+
+    for _, pitch in ipairs(pitch_list) do
+
+        local destination_track =
+            destination_tracks[pitch]
+
+        CopyOriginalSends(
+            source_track,
+            destination_track
+        )
+
+        CopyOriginalReceives(
+            source_track,
+            destination_track
+        )
+    end
+
+
+    --------------------------------------------------------
+    -- Process SELECTED items only.
+    --------------------------------------------------------
+
+    for _, pitch in ipairs(pitch_list) do
+
+        local destination_track =
+            destination_tracks[pitch]
+
+        for _, data in ipairs(selected_items) do
+
+            ------------------------------------------------
+            -- Only create an item when THIS selected item
+            -- actually contains this pitch.
+            ------------------------------------------------
+
+            local item_pitches =
+                GetItemPitches(
+                    data.take
+                )
+
+            if item_pitches[pitch] then
+
+                local new_item,
+                      new_take =
+                    CreateNewItem(
+                        destination_track,
+                        data.item
+                    )
+
+                if new_take then
+
+                    CopyNotes(
+                        data.take,
+                        new_take,
+                        pitch
+                    )
+
+                    CopyCCs(
+                        data.take,
+                        new_take
+                    )
+
+                    CopyCCShapes(
+                        data.take,
+                        new_take
+                    )
+
+                    reaper.MIDI_Sort(
+                        new_take
+                    )
+                end
+            end
+        end
+    end
+end
+
+
+------------------------------------------------------------
+-- COLLECT SELECTED MIDI ITEMS
+------------------------------------------------------------
+
+local function CollectSelectedMIDIItems()
+
+    local by_track = {}
+
+    local selected_count =
+        reaper.CountSelectedMediaItems(0)
+
+    for i = 0, selected_count - 1 do
+
+        local item =
+            reaper.GetSelectedMediaItem(
+                0,
+                i
+            )
+
+        local take =
+            reaper.GetActiveTake(item)
+
+        if take and reaper.TakeIsMIDI(take) then
+
+            local track =
+                reaper.GetMediaItemTrack(item)
+
+            if not by_track[track] then
+                by_track[track] = {}
+            end
+
+            by_track[track][#by_track[track] + 1] = {
+                item = item,
+                take = take
+            }
+        end
+    end
+
+    return by_track
+end
+
+
+------------------------------------------------------------
+-- MAIN
+------------------------------------------------------------
+
+local function Main()
+
+    --------------------------------------------------------
+    -- IMPORTANT:
+    --
+    -- We now use SELECTED MEDIA ITEMS rather than
+    -- selected tracks.
+    --------------------------------------------------------
+
+    local items_by_track =
+        CollectSelectedMIDIItems()
+
+    local source_tracks = {}
+
+    for track in pairs(items_by_track) do
+        source_tracks[#source_tracks + 1] = track
+    end
+
+    if #source_tracks == 0 then
+        return
+    end
+
+    --------------------------------------------------------
+    -- Sort source tracks from bottom to top.
+    --
+    -- This prevents inserted tracks from interfering with
+    -- the remaining source-track references.
+    --------------------------------------------------------
+
+    table.sort(
+        source_tracks,
+        function(a, b)
+
+            local a_index =
+                reaper.GetMediaTrackInfo_Value(
+                    a,
+                    "IP_TRACKNUMBER"
+                )
+
+            local b_index =
+                reaper.GetMediaTrackInfo_Value(
+                    b,
+                    "IP_TRACKNUMBER"
+                )
+
+            return a_index > b_index
+        end
+    )
+
+    reaper.Undo_BeginBlock()
+
+    reaper.PreventUIRefresh(1)
+
+    --------------------------------------------------------
+    -- Process each source track.
+    --------------------------------------------------------
+
+    for _, source_track in ipairs(source_tracks) do
+
+        ProcessTrack(
+            source_track,
+            items_by_track[source_track]
+        )
+    end
+
+    reaper.PreventUIRefresh(-1)
+
+    reaper.UpdateArrange()
+
+    reaper.Undo_EndBlock(
+        "Split selected MIDI items by note row",
+        -1
+    )
+end
+
+
+Main()
 
 reaper.PreventUIRefresh(-1)
 reaper.Undo_EndBlock(
-    "Split MIDI by pitch (PPQ-normalized, REAPER note names)",
+    "7R Split MIDI by pitch",
     -1
 )
