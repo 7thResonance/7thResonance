@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="8f685bc947b23d1bb95b896b05c1f36ff61197d9">
+<index version="1" name="7thResonance" commit="6ebea1eb3b90016f9d9d6472ee569f7318d59b56">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -45,6 +45,11 @@
         <changelog><![CDATA[- Added mode change smoothing to avoid clicks
 - Companion lua script to engage sum (sum) with a shortcut]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/8f685bc947b23d1bb95b896b05c1f36ff61197d9/JSFX/7R%20Band%20Monitor.jsfx</source>
+      </version>
+      <version name="1.2" author="7thResonance" time="2026-08-24T22:22:43Z">
+        <changelog><![CDATA[- Added mode change smoothing to avoid clicks
+- Companion lua script to engage sum (mid) with a shortcut]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/6ebea1eb3b90016f9d9d6472ee569f7318d59b56/JSFX/7R%20Band%20Monitor.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
