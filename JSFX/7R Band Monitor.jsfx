@@ -5,7 +5,7 @@ about: A multiband monitor to isolate frequencies. basicaly a shittier verison o
 changelog: - Added mode change smoothing to avoid clicks
            - Companion lua script to engage sum (mid) with a shortcut
 @provides: 
-  [script main] Utilities\7R Band Monitor Toggle Mid.lua
+  [script main] JSFX\7R Band Monitor Toggle Mid.lua
 
 
 in_pin:Stereo Input
