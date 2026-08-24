@@ -1,11 +1,11 @@
 desc:7R Band Monitor
-author: 7thResonance
-version: 1.3
-about: A multiband monitor to isolate frequencies. basicaly a shittier verison of ISOL8
-changelog: - Added mode change smoothing to avoid clicks
-           - Companion lua script to engage sum (mid) with a shortcut
+author:7thResonance
+version:1.3
+about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
+changelog: companion script
 
-
+@provides
+Utilities/7R Band Monitor Toggle Mid.lua
 
 in_pin:Stereo Input
 out_pin:Stereo Output
