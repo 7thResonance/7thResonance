@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="a7a74a4a2ba2a86e5e984f445f5182440d96492e">
+<index version="1" name="7thResonance" commit="dafe605abd9cf3ef73e4bca974896f8473cb1f09">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -27,6 +27,21 @@
     </reapack>
   </category>
   <category name="JSFX">
+    <reapack name="7R Band Monitor.jsfx" type="effect" desc="7R Band Monitor">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 A multiband monitor to isolate frequencies. basicaly a shittier verison of ISOL8\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="7thResonance" time="2026-08-22T19:48:17Z">
+        <changelog><![CDATA[- init]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/dafe605abd9cf3ef73e4bca974896f8473cb1f09/JSFX/7R%20Band%20Monitor.jsfx</source>
+      </version>
+    </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
