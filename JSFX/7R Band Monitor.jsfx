@@ -1,8 +1,9 @@
 desc:7R Band Monitor
 author: 7thResonance
-version: 1.0
+version: 1.1
 about: A multiband monitor to isolate frequencies. basicaly a shittier verison of ISOL8
-changelog: - init
+changelog: - Added mode change smoothing to avoid clicks
+           - Companion lua script to engage sum (sum) with a shortcut
 
 in_pin:Stereo Input
 out_pin:Stereo Output
@@ -50,6 +51,23 @@ gfx_ext_flags |= 0x100;
   last_x1 = -1; last_x2 = -1; last_x3 = -1; last_x4 = -1;
   last_slope = -1;
   oldldown = 0;
+
+  // Click-free mode switching
+  // A short fade-out/fade-in is used whenever the monitoring topology changes.
+  // This prevents discontinuities when switching input/monitor modes, mute/solo,
+  // bypass, or filter slope. 5 ms is short enough to feel instantaneous.
+  transition_len = 0;
+  transition_pos = 0;
+  transition_active = 0;
+  prev_outL = 0;
+  prev_outR = 0;
+  last_mode = slider6;
+  last_mon = slider7;
+  last_slope_state = slider5;
+  last_f_active = 0;
+  last_act0 = 1; last_act1 = 1; last_act2 = 1; last_act3 = 1; last_act4 = 1;
+  last_x1_state = slider1; last_x2_state = slider2;
+  last_x3_state = slider3; last_x4_state = slider4;
 
   editing_idx = -1;
   strcpy(#edit_buf, "");
@@ -201,14 +219,37 @@ gfx_ext_flags |= 0x100;
   act3 = solo_any ? slider16 : !slider11;
   act4 = solo_any ? slider17 : !slider12;
 
+  // Detect changes which can create an instantaneous discontinuity.
+  mode_changed = (slider6 != last_mode) || (slider7 != last_mon) ||
+                 (slider5 != last_slope_state) || (filtering_active != last_f_active) ||
+                 (act0 != last_act0) || (act1 != last_act1) ||
+                 (act2 != last_act2) || (act3 != last_act3) || (act4 != last_act4) ||
+                 (slider1 != last_x1_state) || (slider2 != last_x2_state) ||
+                 (slider3 != last_x3_state) || (slider4 != last_x4_state);
+
+  mode_changed ? (
+    transition_len = max(1, floor(srate * 0.005)); // 5 ms
+    transition_pos = 0;
+    transition_active = 1;
+  );
+
+  last_mode = slider6;
+  last_mon = slider7;
+  last_slope_state = slider5;
+  last_f_active = filtering_active;
+  last_act0 = act0; last_act1 = act1; last_act2 = act2;
+  last_act3 = act3; last_act4 = act4;
+  last_x1_state = slider1; last_x2_state = slider2;
+  last_x3_state = slider3; last_x4_state = slider4;
+
 @sample
   inL = spl0;
   inR = spl1;
 
   !filtering_active ? (
-    // Direct bypass: Bit-exact pass-through (Nulls perfectly)
-    spl0 = inL;
-    spl1 = inR;
+    // Direct bypass: Bit-exact pass-through when no transition is active.
+    newL = inL;
+    newR = inR;
   ) : (
     mode = slider6;
     mode == 0 ? ( srcL = inL;            srcR = inR;            ) :
@@ -258,9 +299,43 @@ gfx_ext_flags |= 0x100;
                ( finalL = outR;            finalR = outR;            );
 
     // Apply +1 dB boost only while filtering/monitoring is engaged
-    spl0 = finalL * GAIN_1DB;
-    spl1 = finalR * GAIN_1DB;
+    newL = finalL * GAIN_1DB;
+    newR = finalR * GAIN_1DB;
   );
+
+  // Click-free transition. Keep the previous output sample so the transition
+  // can smoothly go from the old signal to zero, then from zero to the new
+  // signal. This avoids the discontinuity that causes a click.
+  transition_active ? (
+    transition_pos += 1;
+    half = transition_len * 0.5;
+
+    transition_pos <= half ? (
+      // Old output -> silence
+      fade = transition_pos / half;
+      spl0 = prev_outL * (1 - fade);
+      spl1 = prev_outR * (1 - fade);
+    ) : (
+      // Silence -> new output
+      fade = (transition_pos - half) / half;
+      spl0 = newL * fade;
+      spl1 = newR * fade;
+    );
+
+    transition_pos >= transition_len ? (
+      transition_active = 0;
+      transition_pos = 0;
+      spl0 = newL;
+      spl1 = newR;
+    );
+  ) : (
+    spl0 = newL;
+    spl1 = newR;
+  );
+
+  // Keep the final output sample for the next transition.
+  prev_outL = spl0;
+  prev_outR = spl1;
 
 @gfx 180 85
   gfx_setfont(1, "Arial", 11);
