@@ -1,9 +1,11 @@
-@noindex
+
 
 --[[
-  7R Band Monitor - Toggle Mid Monitor
-  Toggles the 7R Band Monitor JSFX on the Master Track
-  between Stereo and Mid monitoring.
+  @description 7R Band Monitor - Toggle Mid Monitor
+  @version 0.3
+  @author 7thResonance
+  @about
+    companion script to togggle mid in 7R Band Monitor JSFX
 ]]
 
 local FX_NAME = "7R Band Monitor"
