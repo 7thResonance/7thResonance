@@ -4,7 +4,7 @@ version:1.4
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
 changelog: companion script
 
-@provides
+@provides:
 [script main] Utilities/7R Band Monitor Toggle Mid.lua > Scripts\7thResonance\Utilities\7R Band Monitor Toggle Mid.lua
 
 in_pin:Stereo Input
