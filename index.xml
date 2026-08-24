@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="dafe605abd9cf3ef73e4bca974896f8473cb1f09">
+<index version="1" name="7thResonance" commit="8f685bc947b23d1bb95b896b05c1f36ff61197d9">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -40,6 +40,11 @@
       <version name="1.0" author="7thResonance" time="2026-08-22T19:48:17Z">
         <changelog><![CDATA[- init]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/dafe605abd9cf3ef73e4bca974896f8473cb1f09/JSFX/7R%20Band%20Monitor.jsfx</source>
+      </version>
+      <version name="1.1" author="7thResonance" time="2026-08-24T22:02:58Z">
+        <changelog><![CDATA[- Added mode change smoothing to avoid clicks
+- Companion lua script to engage sum (sum) with a shortcut]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/8f685bc947b23d1bb95b896b05c1f36ff61197d9/JSFX/7R%20Band%20Monitor.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
@@ -393,6 +398,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="0.5" author="7thResonance" time="2026-04-25T08:21:58Z">
         <changelog><![CDATA[- Made things simpler and tighter timng.]]></changelog>
         <source type="extension" file="reaper_7R_FX_and_Send_Sync.dll">https://github.com/7thResonance/7thResonance/raw/69742a96051ce2d4f5b2ad9ec30b3bea58ee40b4/UserPlugins/reaper_7R_FX_and_Send_Sync.dll</source>
+      </version>
+      <version name="0.6" author="7thResonance" time="2026-08-24T22:02:58Z">
+        <changelog><![CDATA[- install only on win64 as i dont have option to test it elsewhere]]></changelog>
+        <source platform="win64" type="extension" file="reaper_7R_FX_and_Send_Sync.dll">https://github.com/7thResonance/7thResonance/raw/8f685bc947b23d1bb95b896b05c1f36ff61197d9/UserPlugins/reaper_7R_FX_and_Send_Sync.dll</source>
       </version>
     </reapack>
   </category>
