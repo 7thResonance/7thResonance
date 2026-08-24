@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="f7cc729507275e173d80762388d4ec6f3c72fbcf">
+<index version="1" name="7thResonance" commit="f366dad8bc39b7d813ab5dbd4db814269759a5cc">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -33,7 +33,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 A multiband monitor to isolate frequencies. basicaly a shittier verison of ISOL8\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.\par}
 }
 ]]></description>
       </metadata>
