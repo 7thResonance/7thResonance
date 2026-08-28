@@ -1462,8 +1462,22 @@ void PropagateDeletedTrackFx(MediaTrack* source_track,
   }
 }
 
+bool IsTrackFrozen(MediaTrack* track) {
+  if (!track) return false;
+  // REAPER exposes the number of freeze states currently applied to the track.
+  // During a freeze operation, FX are intentionally removed from the live chain
+  // and stored in the freeze state so they can be restored by Unfreeze.
+  // The FX-link deletion synchronizer must not interpret that as a user deletion.
+  return GetMediaTrackInfo_Value(track, "I_FREEZECOUNT") > 0.0;
+}
+
 void SyncTrackFxDeletionFromChange(MediaTrack* source_track, const bool rec_fx) {
   if (!source_track) return;
+
+  // Track freezing removes the frozen FX from the live chain. Do not propagate
+  // those removals to the other selected tracks, or their VSTi/FX information
+  // can be deleted from the freeze state and become impossible to restore.
+  if (IsTrackFrozen(source_track)) return;
 
   std::vector<std::string> old_names = GetTrackFxNameListFromSnapshot(source_track, rec_fx);
   const std::vector<std::string> new_names = GetTrackFxNameList(source_track, rec_fx);
