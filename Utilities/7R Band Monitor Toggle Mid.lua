@@ -2,7 +2,7 @@
 
 --[[
   @description 7R Band Monitor
-  @version 0.1
+  @version 0.2
   @author 7thResonance
   @about
     companion script to togggle mid in 7R Band Monitor JSFX

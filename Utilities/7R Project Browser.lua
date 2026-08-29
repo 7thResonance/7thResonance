@@ -1,8 +1,9 @@
 --[[
 @description 7R Project Browser
 @author 7thResonance
-@version 1.0
-@changelog - initial
+@version 1.1
+@changelog -  optimised GUI defer rendering. 
+              Auto close on project open, compatible with 60 FPS timer extension
 @screenshot Window https://i.postimg.cc/W1D3q8m6/Screenshot-2025-08-23-002124.png
 @about A simple GUI to view and load projects.
     - Select Root Master folder.
@@ -400,6 +401,7 @@ local function save_config(cfg)
   f:write("hiddenPaths=", join_set(cfg.hiddenPaths), "\n")
   f:write("includeSubfolders=", cfg.includeSubfolders and "true" or "false", "\n")
   f:write("searchAllFolders=", cfg.searchAllFolders and "true" or "false", "\n")
+  f:write("autoCloseOnOpen=", cfg.autoCloseOnOpen and "true" or "false", "\n")
   f:write("sortMode=", cfg.sortMode or "name", "\n")
   f:write("winX=", tostring(cfg.winX or ""), "\n")
   f:write("winY=", tostring(cfg.winY or ""), "\n")
@@ -416,6 +418,7 @@ local function load_config()
     includeTop = {},   -- set of absolute paths of top-level subfolders to include
     hiddenPaths = {},  -- set of absolute paths to hide anywhere in the tree
     includeSubfolders = true,
+    autoCloseOnOpen = true,
     sortMode = "name",
     winX = nil, winY = nil, winW = nil, winH = nil,
   }
@@ -439,6 +442,8 @@ local function load_config()
         cfg.includeSubfolders = (v == "true")
       elseif k == "searchAllFolders" then
         cfg.searchAllFolders = (v == "true")
+      elseif k == "autoCloseOnOpen" then
+        cfg.autoCloseOnOpen = (v == "true")
       elseif k == "sortMode" then
         cfg.sortMode = v
       elseif k == "winX" then
@@ -489,6 +494,7 @@ state.selectedFolder = state.selectedFolder or ""
 state.includeSubfolders = (state.includeSubfolders ~= nil) and state.includeSubfolders or true -- Right-pane toggle for recursive listing
 state.sortMode = state.sortMode or "date_desc"
 state.searchAllFolders = state.searchAllFolders or false
+if state.autoCloseOnOpen == nil then state.autoCloseOnOpen = true end
 state.searchQuery = state.searchQuery or ""
 state._topLevelCache = {}      -- cache of names for master top-level
 state._lastScannedMaster = nil
@@ -841,12 +847,52 @@ end
 -- After rendering tree, clear one-shot collapse flag
 -- no post-render behavior
 
+-- Project opening is intentionally deferred until after this script's GUI loop has
+-- stopped. This is important for compatibility with extensions that replace or
+-- accelerate REAPER's Win32 timer/event machinery. Calling Main_openProject()
+-- while this high-frequency ImGui/defer loop is still active can leave project
+-- loading competing with the extension's timer callbacks.
+local pending_project_path = nil
+local pending_project_new_tab = false
+local shutting_down_for_project = false
+local main_loop
+
 local function open_project(path, in_new_tab)
-  if in_new_tab then
+  if not path or path == "" or shutting_down_for_project then return end
+
+  pending_project_path = path
+  pending_project_new_tab = in_new_tab and true or false
+  shutting_down_for_project = true
+
+  -- If enabled, the browser disappears as part of the current frame's cleanup.
+  -- The actual Main_openProject() call happens from a later defer cycle, after
+  -- this script has stopped rescheduling itself and its ImGui context is gone.
+end
+
+local function perform_pending_project_open()
+  local path = pending_project_path
+  local new_tab = pending_project_new_tab
+  pending_project_path = nil
+  pending_project_new_tab = false
+
+  if not path or path == "" then
+    shutting_down_for_project = false
+    return
+  end
+
+  if new_tab then
     -- New project tab
     reaper.Main_OnCommand(40859, 0) -- File: New project tab
   end
   reaper.Main_openProject(path)
+
+  -- When the user chose to keep the browser open, resume it only after
+  -- Main_openProject() has completely returned. There is deliberately no
+  -- defer/render activity during the project-loading operation itself.
+  if not state.autoCloseOnOpen then
+    shutting_down_for_project = false
+    reaper.defer(main_loop)
+  end
 end
 
 local function reveal_in_file_manager(path)
@@ -939,10 +985,14 @@ local function render_right_pane()
 
   local mode = state.sortMode or "date_desc"
 
-  -- Compute mtimes if sorting by date (always fetch fresh, no caching)
+  -- Queue missing mtimes instead of doing synchronous filesystem stats for every
+  -- item on every GUI frame. This keeps the browser responsive at high FPS and
+  -- avoids hammering the filesystem while a project is being opened.
   if mode == "date_asc" or mode == "date_desc" then
+    ensure_mtime_for_paths(files)
+    process_mtime_queue(24)
     for _, it in ipairs(items) do
-      it.mtime = os_get_file_mtime(it.path) or 0
+      it.mtime = state._mtimeCache[it.path] or 0
       dbg("prepare_item: name='%s' path='%s' mtime=%s local='%s'", it.name, it.path, tostring(it.mtime), _fmt_local_time(it.mtime))
     end
   end
@@ -1086,19 +1136,6 @@ end
 local function render_menu_bar()
   if reaper.ImGui_BeginMenuBar(ctx) then
     if reaper.ImGui_BeginMenu(ctx, "File") then
-      if reaper.ImGui_MenuItem(ctx, "Save Settings") then
-        save_config(state)
-      end
-      if reaper.ImGui_MenuItem(ctx, "Reload Settings") then
-        local loaded = load_config()
-        -- Keep selectedFolder and includeSubfolders session-local
-        state.masterPath = loaded.masterPath
-        state.hideMaster = loaded.hideMaster
-        state.includeTop = loaded.includeTop
-        state.hiddenPaths = loaded.hiddenPaths
-        state._lastScannedMaster = nil
-        refresh_top_level_cache()
-      end
       reaper.ImGui_EndMenu(ctx)
     end
     if reaper.ImGui_BeginMenu(ctx, "Help") then
@@ -1151,6 +1188,12 @@ local function render_settings_window()
     local changed, v = reaper.ImGui_Checkbox(ctx, "Include subfolders (right pane)", state.includeSubfolders)
     if changed then state.includeSubfolders = v end
 
+    local changedClose, vClose = reaper.ImGui_Checkbox(ctx, "Close browser when opening a project", state.autoCloseOnOpen)
+    if changedClose then
+      state.autoCloseOnOpen = (vClose == true)
+      save_config(state)
+    end
+
     local changedAll, vAll = reaper.ImGui_Checkbox(ctx, "Search across all folders (ignore current selection)", state.searchAllFolders or false)
     if changedAll then
       state.searchAllFolders = vAll and true or false
@@ -1189,24 +1232,12 @@ local function render_settings_window()
       save_config(state)
     end
     reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, "Reload Settings") then
-      local loaded = load_config()
-      -- Keep selectedFolder and includeSubfolders session-local
-      state.masterPath = loaded.masterPath
-      state.hideMaster = loaded.hideMaster
-      state.includeTop = loaded.includeTop
-      state.hiddenPaths = loaded.hiddenPaths
-      state.includeSubfolders = loaded.includeSubfolders
-      state.sortMode = loaded.sortMode or state.sortMode
-      state._lastScannedMaster = nil
-      refresh_top_level_cache()
-    end
   end
   reaper.ImGui_End(ctx)
   if not open then state.showSettings = false end
 end
 
-local function main_loop()
+main_loop = function()
   reaper.ImGui_SetNextWindowPos(ctx, state.winX or 100, state.winY or 100, reaper.ImGui_Cond_FirstUseEver())
   reaper.ImGui_SetNextWindowSize(ctx, state.winW or 1000, state.winH or 600, reaper.ImGui_Cond_FirstUseEver())
   local visible, open = reaper.ImGui_Begin(ctx, '7R Project Browser', true)
@@ -1264,6 +1295,21 @@ local function main_loop()
     reaper.ImGui_End(ctx)
   end
 
+  -- A project-open request is handled as a hard handoff: do not reschedule this
+  -- script while the project is loading. With auto-close enabled, destroy the
+  -- ImGui context now as well. Otherwise keep the context but leave the script
+  -- completely idle until Main_openProject() has returned.
+  if shutting_down_for_project then
+    save_config(state)
+    if state.autoCloseOnOpen then
+      if reaper.ImGui_DestroyContext then
+        reaper.ImGui_DestroyContext(ctx)
+      end
+    end
+    reaper.defer(perform_pending_project_open)
+    return
+  end
+
   if open then
     reaper.defer(main_loop)
   else
@@ -1276,3 +1322,4 @@ end
 
 -- Kick off
 reaper.defer(main_loop)
+
