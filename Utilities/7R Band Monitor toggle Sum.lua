@@ -1,11 +1,11 @@
 
 
 --[[
-  @description 7R Band Monitor
-  @version 0.2
+  @description 7R Band Monitor toggle Sum
+  @version 0.1
   @author 7thResonance
   @about
-    companion script to togggle mid in 7R Band Monitor JSFX
+    companion script to togggle sum in 7R Band Monitor JSFX
 ]]
 
 local FX_NAME = "7R Band Monitor"
