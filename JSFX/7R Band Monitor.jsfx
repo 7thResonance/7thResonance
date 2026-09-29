@@ -1,14 +1,14 @@
 desc:7R Band Monitor
 author:7thResonance
-version:1.5
+version:1.6
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
-changelog: failed at making this install both files. idk. so install it manualy lmao
+changelog: changed first crossover frequency
 
 
 in_pin:Stereo Input
 out_pin:Stereo Output
 
-slider1:200<20,20000,1>-Crossover 1 (Hz)
+slider1:125<20,20000,1>-Crossover 1 (Hz)
 slider2:700<20,20000,1>-Crossover 2 (Hz)
 slider3:2500<20,20000,1>-Crossover 3 (Hz)
 slider4:8000<20,20000,1>-Crossover 4 (Hz)
