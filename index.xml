@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="37b965b3cc0615aebcb589e9ecbb5600560cd9ea">
+<index version="1" name="7thResonance" commit="47eee44daac37446d3bb7a8131b9a280ddb238a9">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -63,6 +63,10 @@
       <version name="1.5" author="7thResonance" time="2026-08-24T23:19:16Z">
         <changelog><![CDATA[failed at making this install both files. idk. so install it manualy lmao]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/a34203b97f69c8e098b5a6e124f6703232aa6a76/JSFX/7R%20Band%20Monitor.jsfx</source>
+      </version>
+      <version name="1.6" author="7thResonance" time="2026-09-29T02:34:27Z">
+        <changelog><![CDATA[changed first crossover frequency]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/47eee44daac37446d3bb7a8131b9a280ddb238a9/JSFX/7R%20Band%20Monitor.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
