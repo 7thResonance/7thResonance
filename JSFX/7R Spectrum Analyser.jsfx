@@ -1,14 +1,22 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.12
+version: 1.13
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: - 7R weighting tweak
+changelog: - added ISO226 weighting.
+           - Fixed some menu bugs
            
+
+//tags: analysis FFT meter spectrum
+//author: Cockos
+/*
+Copyright (C) 2007 Cockos Incorporated
+License: LGPL - http://www.gnu.org/licenses/lgpl.html
+*/
 
 //tags: analysis FFT meter spectrum
 //author: Cockos
@@ -26,12 +34,13 @@ slider5:0<0,20001,1>-integration time (ms)
 slider6:0<0,12,0.1>-slope (dB/octave)
 slider7:1000<10,10000,1>-octave gain center (Hz)
 slider8:0<0,1,1{original,mid/side}>-show mid/side
-slider9:0<0,2,1{disabled,itu-r 468,7r}>-weighting
+slider9:0<0,3,1{disabled,itu-r 468,7r,equal loudness contour}>-weighting
 slider10:0<0,1,1{disabled,enabled}>-rms mode
 slider11:300<0,1000,1>-rms window (ms)
 slider12:0<0,1,1{disabled,enabled}>-normalise display   // NEW: normalisation toggle
 slider13:0<0,6,1{off,1/12 octave,1/6 octave,1/3 octave,1/2 octave,1 octave,2 octaves}>-octave smoothing
 slider14:0<0,1,1{disabled,enabled}>-auto freeze on stop
+slider15:80<0,90,1>-phon reference (ISO 226)
 
 in_pin:left input
 in_pin:right input
@@ -78,6 +87,83 @@ auto_freeze_on_stop = slider14;
 auto_freeze_active = 0;
 was_auto_freeze_active = 0;
 was_playing = 0;
+old_phon = slider15;
+// ISO 226 data. At 80 phon, use the supplied inverse-contour values directly.
+// Other phon references use the ISO 226 equation to build the same curve.
+iso_f_count = 29;
+
+function iso226_hermite(x,x0,y0,d0,x1,y1,d1)
+  local(h,t,t2,t3)
+(
+  h = x1 - x0;
+  t = (x - x0) / h;
+  t2 = t * t;
+  t3 = t2 * t;
+  (2 * t3 - 3 * t2 + 1) * y0 +
+  (t3 - 2 * t2 + t) * h * d0 +
+  (-2 * t3 + 3 * t2) * y1 +
+  (t3 - t2) * h * d1;
+);
+
+function iso_c_weighting(freq)
+  local(f2,rc,rc_1k)
+(
+  f2 = sqr(freq);
+  rc = sqr(12194) * f2 / ((f2 + sqr(20.6)) * (f2 + sqr(12194)));
+  rc_1k = sqr(12194) * 1000000 / ((1000000 + sqr(20.6)) * (1000000 + sqr(12194)));
+  20 * log10(rc / rc_1k);
+);
+
+function iso226_compute_table(phon)
+(
+  Ln = phon;
+  i = 0;
+  loop(iso_f_count,
+    Af = 0.00447 * (pow(10, (0.025 * Ln)) - 1.15) + pow(0.4 * pow(10, ((iso_Tf[i] + iso_Lu[i]) / 10.0 - 9.0)), iso_af[i]);
+    Af = max(Af, 0.00000000000000000001);
+    iso_Lp[i] = ((10.0 / iso_af[i]) * (log(Af) / log(10))) - iso_Lu[i] + 94;
+    iso_data[i] = phon == 80 ? iso80_data[i] : phon - iso_Lp[i];
+    iso_log_freq[i] = log(iso_f[i]);
+    i += 1;
+  );
+  iso_derivatives[0] = (iso_data[1] - iso_data[0]) / (iso_log_freq[1] - iso_log_freq[0]);
+  i = 1;
+  loop(27,
+    iso_derivatives[i] = (iso_data[i + 1] - iso_data[i - 1]) / (iso_log_freq[i + 1] - iso_log_freq[i - 1]);
+    i += 1;
+  );
+  iso_derivatives[28] = 0;
+);
+
+function iso226_interp(freq)
+  local(i,x,x0,x1,y0,y1,d0,d1)
+(
+  freq = max(freq, 0.1);
+  x = log(freq);
+  freq < 20 ? (
+    iso_data[0] + (x - iso_log_freq[0]) * iso_derivatives[0];
+  ) : freq < 10000 ? (
+    i = 0;
+    loop(28,
+      iso_f[i] <= freq && freq <= iso_f[i + 1] ? ( break ) : ( i += 1; );
+    );
+    x0 = iso_log_freq[i];
+    x1 = iso_log_freq[i + 1];
+    iso226_hermite(x, x0, iso_data[i], iso_derivatives[i], x1, iso_data[i + 1], iso_derivatives[i + 1]);
+  ) : freq < 20000 ? (
+    x0 = iso_log_freq[27];
+    x1 = iso_x20k;
+    iso226_hermite(x, x0, iso_data[27], iso_derivatives[27], x1, iso_value20k, iso_derivative20k);
+  ) : (
+    iso_c_weighting(freq);
+  );
+);
+
+function iso226_weighting_gain(freq, mode)
+(
+  mode == 3 ? iso226_interp(freq) : 0;
+);
+
 r7_hp1_gain = 1;
 
 // --- Memory layout (safe, minimal) ---
@@ -122,6 +208,30 @@ itu_z_r2_u2 = itu_z_r2_u1 + 1;
 smooth_prefix = itu_z_r2_u2 + 1;
 display_main_db = smooth_prefix + (max_fft_size * 0.5 + 1);
 display_side_db = display_main_db + (max_fft_size * 0.5);
+
+// Give ISO tables their own memory after every FFT, RMS, and display buffer.
+iso_table_base = display_side_db + (max_fft_size * 0.5);
+iso_f = iso_table_base;
+iso_af = iso_f + iso_f_count;
+iso_Lu = iso_af + iso_f_count;
+iso_Tf = iso_Lu + iso_f_count;
+iso_Lp = iso_Tf + iso_f_count;
+iso80_data = iso_Lp + iso_f_count;
+iso_data = iso80_data + iso_f_count;
+iso_log_freq = iso_data + iso_f_count;
+iso_derivatives = iso_log_freq + iso_f_count;
+
+iso_f[0]=20;iso_f[1]=25;iso_f[2]=31.5;iso_f[3]=40;iso_f[4]=50;iso_f[5]=63;iso_f[6]=80;iso_f[7]=100;iso_f[8]=125;iso_f[9]=160;iso_f[10]=200;iso_f[11]=250;iso_f[12]=315;iso_f[13]=400;iso_f[14]=500;iso_f[15]=630;iso_f[16]=800;iso_f[17]=1000;iso_f[18]=1250;iso_f[19]=1600;iso_f[20]=2000;iso_f[21]=2500;iso_f[22]=3150;iso_f[23]=4000;iso_f[24]=5000;iso_f[25]=6300;iso_f[26]=8000;iso_f[27]=10000;iso_f[28]=12500;
+iso_af[0]=0.532;iso_af[1]=0.506;iso_af[2]=0.480;iso_af[3]=0.455;iso_af[4]=0.432;iso_af[5]=0.409;iso_af[6]=0.387;iso_af[7]=0.367;iso_af[8]=0.349;iso_af[9]=0.330;iso_af[10]=0.315;iso_af[11]=0.301;iso_af[12]=0.288;iso_af[13]=0.276;iso_af[14]=0.267;iso_af[15]=0.259;iso_af[16]=0.253;iso_af[17]=0.250;iso_af[18]=0.246;iso_af[19]=0.244;iso_af[20]=0.243;iso_af[21]=0.243;iso_af[22]=0.243;iso_af[23]=0.242;iso_af[24]=0.242;iso_af[25]=0.245;iso_af[26]=0.254;iso_af[27]=0.271;iso_af[28]=0.301;
+iso_Lu[0]=-31.6;iso_Lu[1]=-27.2;iso_Lu[2]=-23.0;iso_Lu[3]=-19.1;iso_Lu[4]=-15.9;iso_Lu[5]=-13.0;iso_Lu[6]=-10.3;iso_Lu[7]=-8.1;iso_Lu[8]=-6.2;iso_Lu[9]=-4.5;iso_Lu[10]=-3.1;iso_Lu[11]=-2.0;iso_Lu[12]=-1.1;iso_Lu[13]=-0.4;iso_Lu[14]=0.0;iso_Lu[15]=0.3;iso_Lu[16]=0.5;iso_Lu[17]=0.0;iso_Lu[18]=-2.7;iso_Lu[19]=-4.1;iso_Lu[20]=-1.0;iso_Lu[21]=1.7;iso_Lu[22]=2.5;iso_Lu[23]=1.2;iso_Lu[24]=-2.1;iso_Lu[25]=-7.1;iso_Lu[26]=-11.2;iso_Lu[27]=-10.7;iso_Lu[28]=-3.1;
+iso_Tf[0]=78.5;iso_Tf[1]=68.7;iso_Tf[2]=59.5;iso_Tf[3]=51.1;iso_Tf[4]=44.0;iso_Tf[5]=37.5;iso_Tf[6]=31.5;iso_Tf[7]=26.5;iso_Tf[8]=22.1;iso_Tf[9]=17.9;iso_Tf[10]=14.4;iso_Tf[11]=11.4;iso_Tf[12]=8.6;iso_Tf[13]=6.2;iso_Tf[14]=4.4;iso_Tf[15]=3.0;iso_Tf[16]=2.2;iso_Tf[17]=2.4;iso_Tf[18]=3.5;iso_Tf[19]=1.7;iso_Tf[20]=-1.3;iso_Tf[21]=-4.2;iso_Tf[22]=-6.0;iso_Tf[23]=-5.4;iso_Tf[24]=-1.5;iso_Tf[25]=6.0;iso_Tf[26]=12.6;iso_Tf[27]=13.9;iso_Tf[28]=12.3;
+iso80_data[0]=-38.99;iso80_data[1]=-34.23;iso80_data[2]=-29.65;iso80_data[3]=-25.34;iso80_data[4]=-21.72;iso80_data[5]=-18.36;iso80_data[6]=-15.17;iso80_data[7]=-12.48;iso80_data[8]=-10.09;iso80_data[9]=-7.817;iso80_data[10]=-5.918;iso80_data[11]=-4.309;iso80_data[12]=-2.895;iso80_data[13]=-1.68;iso80_data[14]=-0.8651;iso80_data[15]=-0.1753;iso80_data[16]=0.3292;iso80_data[17]=-0.01381;iso80_data[18]=-2.485;iso80_data[19]=-3.743;iso80_data[20]=-0.5885;iso80_data[21]=2.114;iso80_data[22]=2.923;iso80_data[23]=1.686;iso80_data[24]=-1.62;iso80_data[25]=-6.81;iso80_data[26]=-11.41;iso80_data[27]=-11.74;iso80_data[28]=-5.408;
+
+iso226_compute_table(slider15);
+iso_x20k = log(20000);
+iso_value20k = iso_c_weighting(20000);
+iso_epsilon = 0.000001;
+iso_derivative20k = (iso_c_weighting(exp(iso_x20k + iso_epsilon)) - iso_value20k) / iso_epsilon;
 
 // Hardcoded SOS coeffs (b0,b1,b2 | a0=1,a1,a2) for fs=48000
 // Section 0 (low-freq emphasis)
@@ -200,6 +310,7 @@ function get_spectrum_avg_ms(idx)
   idx == 6 ? 20000 :
   0;
 );
+ 
 
 function reset_7r_states()
 (
@@ -319,7 +430,9 @@ function freq_to_screen_pos_anchored(freq)
   local(fmax, percent)
 (
   fmax = srate * 0.49;
-  freq < 10 ? freq = 10;
+  // Keep sub-10 Hz FFT bins left of the visible range instead of stacking
+  // all of them at x=0, which can look like a spurious low-frequency peak.
+  freq < 0.1 ? freq = 0.1;
   
   freq <= 100 ? (
     percent = log(freq/10) / log(10) * 0.33;
@@ -362,6 +475,7 @@ slider9 != old_itu ? (
   // Reset both normalization values when weighting mode changes to get correct peak detection
   norm_ref = 0;
   norm_offset_hold = 0;
+  update = 1;
 );
 update_7r_coeffs();
 slider10 != old_rms ? (
@@ -391,6 +505,11 @@ slider14 != old_auto ? (
 slider13 != old_smoothmode ? (
   old_smoothmode = slider13;
   integrate_en = 0;
+);
+slider15 != old_phon ? (
+  old_phon = slider15;
+  iso226_compute_table(slider15);
+  update = 1;
 );
 slider5 > 20000 ? slider5 = 20001;
 slider11 <= 0 ? (
@@ -608,8 +727,8 @@ function cycle_slider(x, y, z, dx)
 );
 
 function draw_frozen_spectrum()
-  local(i, tx, lx, ty, ly, tx0, lx0, fill_slmin, fill_slast)
-  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,sc,Kdb,slider8,display_main_db,display_side_db,has_spectrum_data,srate)
+  local(i, tx, lx, ty, ly, tx0, lx0, fill_slmin, fill_slast, freq)
+  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,sc,Kdb,slider8,slider9,display_main_db,display_side_db,integrate_buf,integrate_buf2,has_spectrum_data,srate)
 (
   has_spectrum_data ? (
     i=0;
@@ -617,6 +736,8 @@ function draw_frozen_spectrum()
     fill_slmin=gfx_h;
     fill_slast=0;
     loop(fftsize*0.5,
+      freq = i * srate / fftsize;
+      display_main_db[i] = integrate_buf[i] * Kdb + iso226_weighting_gain(freq, slider9);
       ty = (display_main_db[i] / Kdb) * -0.5 * sc + 20;
       tx = freq_to_screen_pos_anchored(i * srate / fftsize);
 
@@ -651,6 +772,8 @@ function draw_frozen_spectrum()
       gfx_r=1; gfx_g=0; gfx_b=0;
       gfx_a=0.45;
       loop(fftsize*0.5,
+        freq = i * srate / fftsize;
+        display_side_db[i] = integrate_buf2[i] * Kdb + iso226_weighting_gain(freq, slider9);
         ty = (display_side_db[i] / Kdb) * -0.5 * sc + 20;
         tx = freq_to_screen_pos_anchored(i * srate / fftsize);
         i ? (
@@ -810,11 +933,12 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
   
   sprintf(#menustr,"%s|%sShow mid/side",#menustr,slider8>.5?"!":"");
   
-  sprintf(#menustr,"%s|>Weighting|%sOff|%sITU-R 468|%s7R|<",
+  sprintf(#menustr,"%s|>Weighting|%sOff|%sITU-R 468|%s7R|%sEqual loudness contour|<",
     #menustr,
     slider9==0?"!":"",
     slider9==1?"!":"",
-    slider9==2?"!":"");
+    slider9==2?"!":"",
+    slider9==3?"!":"");
   
   sprintf(#menustr,"%s|%sRMS mode",#menustr,slider10>.5?"!":"");
   
@@ -850,8 +974,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     (ret-=12) < 4 ? (slider4 = ret; slider_automate(slider4); ):
     (ret-=4) == 0 ? (slider3 = !slider3; old_w=0; slider_automate(slider3); ) :
     (ret-=1) == 0 ? (slider8 = !slider8; old_w=0; slider_automate(slider8); ) :
-    (ret-=1) < 3 ? (slider9 = ret; old_w=0; slider_automate(slider9); ) :
-    (ret-=3) == 0 ? (
+    (ret-=1) < 4 ? (slider9 = ret; old_w=0; slider_automate(slider9); ) :
+    (ret-=4) == 0 ? (
       slider10 = !slider10;
       slider10 > 0.5 && slider11 <= 0.5 ? (
         slider11 = 300;
@@ -901,6 +1025,15 @@ old_w=gfx_w; old_h=gfx_h;
 gfx_r=gfx_g=gfx_b=0; gfx_a=1;
 gfx_x=gfx_y=0;
 gfx_rectto(gfx_w,gfx_h);
+
+// Draw phon label top-left when equal-loudness mode active
+slider9 == 3 && !small_mode ? (
+  gfx_set(0,1,0,0.95);
+  gfx_x = 4; gfx_y = 4;
+  sprintf(#phonstr, "ELC ref: %d phon", slider15|0);
+  gfx_drawstr(#phonstr);
+  gfx_set(0,0,0,1);
+);
 
 sc=(gfx_h-20)*20/(-slider2 * log(10));
 
@@ -1144,7 +1277,7 @@ num_bins = fftsize * 0.5;
   i=0;
   // conversion factor ln(power) -> dB: Kdb = 10 / ln(10)
   loop(fftsize*0.5,
-    dbi = mag_buf_temp[i] * Kdb;
+    dbi = mag_buf_temp[i] * Kdb + iso226_weighting_gain(i * srate / fftsize, slider9);
     dbi > peak_db ? peak_db = dbi;
     i += 1;
   );
@@ -1203,8 +1336,12 @@ slider12 > 0.5 ? (
     integrate_en ? (
       ty = buf2[] += integrate_sc * (ty - buf2[]);
       buf2 += 1;
+    ) : (
+      integrate_buf[i] = ty;
     );
 
+    iso_corr = iso226_weighting_gain(i * srate / fftsize, slider9);
+    ty += iso_corr / Kdb;
     display_main_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
     tx = freq_to_screen_pos_anchored(i * srate / fftsize);
@@ -1313,8 +1450,12 @@ slider12 > 0.5 ? (
     integrate_en ? (
       ty = buf2[] += integrate_sc * (ty - buf2[]);
       buf2 += 1;
+    ) : (
+      integrate_buf2[i] = ty;
     );
 
+    iso_corr = iso226_weighting_gain(i * srate / fftsize, slider9);
+    ty += iso_corr / Kdb;
     display_side_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
     tx = freq_to_screen_pos_anchored(i * srate / fftsize);
@@ -1329,7 +1470,6 @@ slider12 > 0.5 ? (
     i+=1;
     );
     ); // end slider8 > 0.5 conditional
-
     has_spectrum_data && mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
       hover_freq = screen_pos_to_freq_anchored(mouse_x);
       hover_bin = hover_freq / (srate / fftsize);
