@@ -1,30 +1,33 @@
 desc:7R Band Monitor
 author:7thResonance
-version:1.6
+version:1.7
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
-changelog: changed first crossover frequency
+changelog: added one more band. can now monitor just the sub extention below 54 hz
 
 
 in_pin:Stereo Input
 out_pin:Stereo Output
 
-slider1:125<20,20000,1>-Crossover 1 (Hz)
-slider2:700<20,20000,1>-Crossover 2 (Hz)
-slider3:2500<20,20000,1>-Crossover 3 (Hz)
-slider4:8000<20,20000,1>-Crossover 4 (Hz)
-slider5:1<1,2,1{24dB/oct,48dB/oct}>-Slope
-slider6:0<0,4,1{Stereo,Left,Right,Mid,Side}>-Input Mode
-slider7:0<0,4,1{Stereo,Mid,Side,Left,Right}>-Monitor Mode
-slider8:0<0,1,1>-Mute Low
-slider9:0<0,1,1>-Mute Low-Mid
-slider10:0<0,1,1>-Mute Mid
-slider11:0<0,1,1>-Mute High-Mid
-slider12:0<0,1,1>-Mute High
-slider13:0<0,1,1>-Solo Low
-slider14:0<0,1,1>-Solo Low-Mid
-slider15:0<0,1,1>-Solo Mid
-slider16:0<0,1,1>-Solo High-Mid
-slider17:0<0,1,1>-Solo High
+slider1:54<20,20000,1>-Crossover 1 (Hz)
+slider2:200<20,20000,1>-Crossover 2 (Hz)
+slider3:700<20,20000,1>-Crossover 3 (Hz)
+slider4:2500<20,20000,1>-Crossover 4 (Hz)
+slider5:8000<20,20000,1>-Crossover 5 (Hz)
+slider6:1<1,2,1{24dB/oct,48dB/oct}>-Slope
+slider7:0<0,4,1{Stereo,Left,Right,Mid,Side}>-Input Mode
+slider8:0<0,4,1{Stereo,Mid,Side,Left,Right}>-Monitor Mode
+slider9:0<0,1,1>-Mute Sub
+slider10:0<0,1,1>-Mute Low
+slider11:0<0,1,1>-Mute Low-Mid
+slider12:0<0,1,1>-Mute Mid
+slider13:0<0,1,1>-Mute High
+slider14:0<0,1,1>-Mute Air
+slider15:0<0,1,1>-Solo Sub
+slider16:0<0,1,1>-Solo Low
+slider17:0<0,1,1>-Solo Low-Mid
+slider18:0<0,1,1>-Solo Mid
+slider19:0<0,1,1>-Solo High
+slider20:0<0,1,1>-Solo Air
 
 options:no_meter
 
@@ -48,7 +51,7 @@ gfx_ext_flags |= 0x100;
   clear_buffers();
 
   last_srate = 0;
-  last_x1 = -1; last_x2 = -1; last_x3 = -1; last_x4 = -1;
+  last_x1 = -1; last_x2 = -1; last_x3 = -1; last_x4 = -1; last_x5 = -1;
   last_slope = -1;
   oldldown = 0;
 
@@ -61,16 +64,19 @@ gfx_ext_flags |= 0x100;
   transition_active = 0;
   prev_outL = 0;
   prev_outR = 0;
-  last_mode = slider6;
-  last_mon = slider7;
-  last_slope_state = slider5;
+  last_mode = slider7;
+  last_mon = slider8;
+  last_slope_state = slider6;
   last_f_active = 0;
-  last_act0 = 1; last_act1 = 1; last_act2 = 1; last_act3 = 1; last_act4 = 1;
+  last_act0 = 1; last_act1 = 1; last_act2 = 1;
+  last_act3 = 1; last_act4 = 1; last_act5 = 1;
   last_x1_state = slider1; last_x2_state = slider2;
-  last_x3_state = slider3; last_x4_state = slider4;
+  last_x3_state = slider3; last_x4_state = slider4; last_x5_state = slider5;
 
   editing_idx = -1;
   strcpy(#edit_buf, "");
+  edit_original = 0;
+  edit_selected = 0;
   last_click_time = 0;
   last_click_x = -1;
   last_click_y = -1;
@@ -83,9 +89,10 @@ gfx_ext_flags |= 0x100;
   );
 
   function default_freq(idx) (
-    idx == 1 ? 80 :
-    idx == 2 ? 300 :
-    idx == 3 ? 2500 : 8000;
+    idx == 1 ? 54 :
+    idx == 2 ? 200 :
+    idx == 3 ? 700 :
+    idx == 4 ? 2500 : 8000;
   );
 
   function make_lp(idx, fc, sr) local(w0, cs, sn, alpha, a0) (
@@ -124,11 +131,12 @@ gfx_ext_flags |= 0x100;
     slider2 = clamp(slider2, slider1 + 5, max_f);
     slider3 = clamp(slider3, slider2 + 5, max_f);
     slider4 = clamp(slider4, slider3 + 5, max_f);
+    slider5 = clamp(slider5, slider4 + 5, max_f);
 
-    stages = (slider5 == 1) ? 2 : 4;
+    stages = (slider6 == 1) ? 2 : 4;
 
     node = 0;
-    loop(4,
+    loop(5,
       fc = slider(node + 1);
       ch = 0;
       loop(2,
@@ -145,12 +153,12 @@ gfx_ext_flags |= 0x100;
       node += 1;
     );
 
-    slider5 != last_slope ? clear_buffers();
+    slider6 != last_slope ? clear_buffers();
 
     last_srate = sr;
     last_x1 = slider1; last_x2 = slider2;
-    last_x3 = slider3; last_x4 = slider4;
-    last_slope = slider5;
+    last_x3 = slider3; last_x4 = slider4; last_x5 = slider5;
+    last_slope = slider6;
   );
 
   function run_filter(x, idx) local(y) (
@@ -161,7 +169,7 @@ gfx_ext_flags |= 0x100;
   );
 
   function split_lp(x, node, ch) local(st, stages, idx, y) (
-    stages = (slider5 == 1) ? 2 : 4;
+    stages = (slider6 == 1) ? 2 : 4;
     idx = (node * 2 + ch) * 16;
     y = x;
     st = 0;
@@ -173,7 +181,7 @@ gfx_ext_flags |= 0x100;
   );
 
   function split_hp(x, node, ch) local(st, stages, idx, y) (
-    stages = (slider5 == 1) ? 2 : 4;
+    stages = (slider6 == 1) ? 2 : 4;
     idx = (node * 2 + ch) * 16 + 8;
     y = x;
     st = 0;
@@ -207,25 +215,28 @@ gfx_ext_flags |= 0x100;
 @block
   set_crossovers();
 
-  solo_any = slider13 || slider14 || slider15 || slider16 || slider17;
-  mute_any = slider8 || slider9 || slider10 || slider11 || slider12;
+  solo_any = slider15 || slider16 || slider17 || slider18 || slider19 || slider20;
+  mute_any = slider9 || slider10 || slider11 || slider12 || slider13 || slider14;
   
   // Filtering is active if any band is soloed, muted, or stereo/mon modes are non-default
-  filtering_active = solo_any || mute_any || slider6 != 0 || slider7 != 0;
+  filtering_active = solo_any || mute_any || slider7 != 0 || slider8 != 0;
 
-  act0 = solo_any ? slider13 : !slider8;
-  act1 = solo_any ? slider14 : !slider9;
-  act2 = solo_any ? slider15 : !slider10;
-  act3 = solo_any ? slider16 : !slider11;
-  act4 = solo_any ? slider17 : !slider12;
+  act0 = solo_any ? slider15 : !slider9;
+  act1 = solo_any ? slider16 : !slider10;
+  act2 = solo_any ? slider17 : !slider11;
+  act3 = solo_any ? slider18 : !slider12;
+  act4 = solo_any ? slider19 : !slider13;
+  act5 = solo_any ? slider20 : !slider14;
 
   // Detect changes which can create an instantaneous discontinuity.
-  mode_changed = (slider6 != last_mode) || (slider7 != last_mon) ||
-                 (slider5 != last_slope_state) || (filtering_active != last_f_active) ||
+  mode_changed = (slider7 != last_mode) || (slider8 != last_mon) ||
+                 (slider6 != last_slope_state) || (filtering_active != last_f_active) ||
                  (act0 != last_act0) || (act1 != last_act1) ||
-                 (act2 != last_act2) || (act3 != last_act3) || (act4 != last_act4) ||
+                 (act2 != last_act2) || (act3 != last_act3) ||
+                 (act4 != last_act4) || (act5 != last_act5) ||
                  (slider1 != last_x1_state) || (slider2 != last_x2_state) ||
-                 (slider3 != last_x3_state) || (slider4 != last_x4_state);
+                 (slider3 != last_x3_state) || (slider4 != last_x4_state) ||
+                 (slider5 != last_x5_state);
 
   mode_changed ? (
     transition_len = max(1, floor(srate * 0.005)); // 5 ms
@@ -233,14 +244,14 @@ gfx_ext_flags |= 0x100;
     transition_active = 1;
   );
 
-  last_mode = slider6;
-  last_mon = slider7;
-  last_slope_state = slider5;
+  last_mode = slider7;
+  last_mon = slider8;
+  last_slope_state = slider6;
   last_f_active = filtering_active;
   last_act0 = act0; last_act1 = act1; last_act2 = act2;
-  last_act3 = act3; last_act4 = act4;
+  last_act3 = act3; last_act4 = act4; last_act5 = act5;
   last_x1_state = slider1; last_x2_state = slider2;
-  last_x3_state = slider3; last_x4_state = slider4;
+  last_x3_state = slider3; last_x4_state = slider4; last_x5_state = slider5;
 
 @sample
   inL = spl0;
@@ -251,7 +262,7 @@ gfx_ext_flags |= 0x100;
     newL = inL;
     newR = inR;
   ) : (
-    mode = slider6;
+    mode = slider7;
     mode == 0 ? ( srcL = inL;            srcR = inR;            ) :
     mode == 1 ? ( srcL = inL;            srcR = inL;            ) :
     mode == 2 ? ( srcL = inR;            srcR = inR;            ) :
@@ -259,8 +270,11 @@ gfx_ext_flags |= 0x100;
                 ( s = (inL - inR) * 0.5; srcL = s;    srcR = -s; );
 
     // Channel L Crossover Chain
-    b4_L   = split_hp(srcL, 3, 0);
-    rem3_L = split_lp(srcL, 3, 0);
+    b5_L   = split_hp(srcL, 4, 0);
+    rem4_L = split_lp(srcL, 4, 0);
+
+    b4_L   = split_hp(rem4_L, 3, 0);
+    rem3_L = split_lp(rem4_L, 3, 0);
 
     b3_L   = split_hp(rem3_L, 2, 0);
     rem2_L = split_lp(rem3_L, 2, 0);
@@ -272,8 +286,11 @@ gfx_ext_flags |= 0x100;
     b0_L   = split_lp(rem1_L, 0, 0);
 
     // Channel R Crossover Chain
-    b4_R   = split_hp(srcR, 3, 1);
-    rem3_R = split_lp(srcR, 3, 1);
+    b5_R   = split_hp(srcR, 4, 1);
+    rem4_R = split_lp(srcR, 4, 1);
+
+    b4_R   = split_hp(rem4_R, 3, 1);
+    rem3_R = split_lp(rem4_R, 3, 1);
 
     b3_R   = split_hp(rem3_R, 2, 1);
     rem2_R = split_lp(rem3_R, 2, 1);
@@ -290,8 +307,9 @@ gfx_ext_flags |= 0x100;
     act2 ? ( outL += b2_L; outR += b2_R; );
     act3 ? ( outL += b3_L; outR += b3_R; );
     act4 ? ( outL += b4_L; outR += b4_R; );
+    act5 ? ( outL += b5_L; outR += b5_R; );
 
-    mon = slider7;
+    mon = slider8;
     mon == 0 ? ( finalL = outL;            finalR = outR;            ) :
     mon == 1 ? ( m = (outL + outR) * 0.5;  finalL = m;    finalR = m; ) :
     mon == 2 ? ( s = (outL - outR) * 0.5;  finalL = s;    finalR = -s;) :
@@ -337,7 +355,7 @@ gfx_ext_flags |= 0x100;
   prev_outL = spl0;
   prev_outR = spl1;
 
-@gfx 180 85
+@gfx 280 110
   gfx_setfont(1, "Arial", 11);
   
   mx = mouse_x;
@@ -359,12 +377,25 @@ gfx_ext_flags |= 0x100;
           sliderchange(-1);
         );
         editing_idx = -1;
+        edit_selected = 0;
       ) : char == 27 ? (
+        slider(editing_idx) != edit_original ? (
+          slider(editing_idx) = edit_original;
+          sliderchange(-1);
+        );
         editing_idx = -1;
+        edit_selected = 0;
       ) : char == 8 ? (
-        len = strlen(#edit_buf);
-        len > 0 ? strcpy_substr(#edit_buf, #edit_buf, 0, len - 1);
+        edit_selected ? (
+          strcpy(#edit_buf, "");
+          edit_selected = 0;
+        ) : (
+          len = strlen(#edit_buf);
+          len > 0 ? strcpy_substr(#edit_buf, #edit_buf, 0, len - 1);
+        );
       ) : (char >= 32 && char <= 126) ? (
+        edit_selected ? strcpy(#edit_buf, "");
+        edit_selected = 0;
         sprintf(#ch_str, "%c", char);
         strcat(#edit_buf, #ch_str);
       );
@@ -375,7 +406,7 @@ gfx_ext_flags |= 0x100;
   );
 
   is_small = gfx_h < 100;
-  bw5 = gfx_w / 5;
+  bw6 = gfx_w / 6;
   bw4 = gfx_w / 4;
 
   ldown && drag_idx > 0 ? (
@@ -393,8 +424,8 @@ gfx_ext_flags |= 0x100;
   !is_small ? (
     clicked ? (
       my < 30 ? (
-        mx < 184 ? (
-          col = min(3, floor(mx / 46));
+        mx < 180 ? (
+          col = min(4, floor(mx / 36));
           idx = col + 1;
           now = time_precise();
 
@@ -405,11 +436,15 @@ gfx_ext_flags |= 0x100;
             slider(idx) = default_freq(idx);
             sliderchange(-1);
             editing_idx = -1;
+            edit_selected = 0;
           ) : is_dbl ? (
             editing_idx = idx;
+            edit_original = slider(idx);
+            edit_selected = 1;
             sprintf(#edit_buf, "%.0f", slider(idx));
           ) : (
             editing_idx = -1;
+            edit_selected = 0;
             drag_idx = idx;
             drag_start_y = my;
             drag_start_val = slider(idx);
@@ -418,27 +453,27 @@ gfx_ext_flags |= 0x100;
           last_click_time = now;
           last_click_x = mx;
           last_click_y = my;
-        ) : mx < 230 ? (
-          slider5 = (slider5 == 1 ? 2 : 1);
+        ) : mx < 226 ? (
+          slider6 = (slider6 == 1 ? 2 : 1);
           sliderchange(-1);
         ) : (
-          slider6 = (slider6 + 1) % 5;
+          slider7 = (slider7 + 1) % 5;
           sliderchange(-1);
         );
       ) :
       my < 56 ? (
-        b = min(4, floor(mx / bw5));
-        slider(8 + b) = !slider(8 + b);
+        b = min(5, floor(mx / bw6));
+        slider(9 + b) = !slider(9 + b);
         sliderchange(-1);
       ) :
       my < 82 ? (
-        b = min(4, floor(mx / bw5));
-        slider(13 + b) = !slider(13 + b);
+        b = min(5, floor(mx / bw6));
+        slider(15 + b) = !slider(15 + b);
         sliderchange(-1);
       ) :
       (
         b = min(3, floor(mx / bw4)) + 1;
-        slider7 = (slider7 == b) ? 0 : b;
+        slider8 = (slider8 == b) ? 0 : b;
         sliderchange(-1);
       );
     );
@@ -450,73 +485,73 @@ gfx_ext_flags |= 0x100;
     gfx_rect(0, 0, gfx_w, 30, 1);
 
     b = 0;
-    loop(4,
+    loop(5,
       idx = b + 1;
       val = slider(idx);
-      xx = b * 46;
+      xx = b * 36;
       gfx_set(0.18, 0.18, 0.18, 1);
-      gfx_rect(xx + 2, 2, 42, 26, 1);
+      gfx_rect(xx + 1, 2, 32, 26, 1);
       
       gfx_set(0.75, 0.75, 0.75, 1);
-      lbl = b==0?"X1":b==1?"X2":b==2?"X3":"X4";
-      draw_text_centered(xx + 2, 2, 42, 13, lbl);
+      lbl = b==0?"X1":b==1?"X2":b==2?"X3":b==3?"X4":"X5";
+      draw_text_centered(xx + 1, 2, 32, 13, lbl);
       
       editing_idx == idx ? (
-        gfx_set(0.10, 0.40, 0.70, 1);
-        gfx_rect(xx + 3, 14, 40, 13, 1);
+        edit_selected ? gfx_set(0.10, 0.40, 0.70, 1) : gfx_set(0.06, 0.22, 0.40, 1);
+        gfx_rect(xx + 2, 14, 30, 13, 1);
         gfx_set(1, 1, 1, 1);
-        draw_text_centered(xx + 2, 13, 42, 13, #edit_buf);
+        draw_text_centered(xx + 1, 13, 32, 13, #edit_buf);
       ) : (
         gfx_set(0.95, 0.95, 0.95, 1);
-        draw_text_centered(xx + 2, 13, 42, 13, fmt_freq(val));
+        draw_text_centered(xx + 1, 13, 32, 13, fmt_freq(val));
       );
       b += 1;
     );
 
     gfx_set(0.18, 0.18, 0.18, 1);
-    gfx_rect(186, 2, 42, 26, 1);
+    gfx_rect(182, 2, 42, 26, 1);
     gfx_set(0.9, 0.9, 0.9, 1);
-    lbl_s = slider5==1 ? "24dB" : "48dB";
-    draw_text_centered(186, 2, 42, 26, lbl_s);
+    lbl_s = slider6==1 ? "24dB" : "48dB";
+    draw_text_centered(182, 2, 42, 26, lbl_s);
 
     gfx_set(0.18, 0.18, 0.18, 1);
-    rw_m = max(10, gfx_w - 232);
-    gfx_rect(230, 2, rw_m, 26, 1);
+    rw_m = max(10, gfx_w - 228);
+    gfx_rect(226, 2, rw_m, 26, 1);
     gfx_set(0.9, 0.9, 0.9, 1);
-    lbl_m = slider6==0 ? "STEREO" : slider6==1 ? "LEFT" : slider6==2 ? "RIGHT" : slider6==3 ? "MID" : "SIDE";
-    draw_text_centered(230, 2, rw_m, 26, lbl_m);
+    lbl_m = slider7==0 ? "STEREO" : slider7==1 ? "LEFT" : slider7==2 ? "RIGHT" : slider7==3 ? "MID" : "SIDE";
+    draw_text_centered(226, 2, rw_m, 26, lbl_m);
 
     gfx_set(0.10, 0.10, 0.10, 1);
     gfx_rect(0, 30, gfx_w, 26, 1);
     b = 0;
-    loop(5,
-      bx = b * bw5;
-      active = slider(8 + b);
+    loop(6,
+      bx = b * bw6;
+      active = slider(9 + b);
       active ? gfx_set(0.898, 0.223, 0.207, 1) : gfx_set(0.24, 0.12, 0.12, 1);
-      gfx_rect(bx + 1, 32, bw5 - 2, 22, 1);
+      gfx_rect(bx + 1, 32, bw6 - 2, 22, 1);
       gfx_set(1, 1, 1, 1);
-      lbl_b = b==0?"L":b==1?"LM":b==2?"M":b==3?"HM":"H";
-      draw_text_centered(bx + 1, 32, bw5 - 2, 22, lbl_b);
+      lbl_b = b==0?"SUB":b==1?"LOW":b==2?"LM":b==3?"MID":b==4?"HIGH":"AIR";
+      draw_text_centered(bx + 1, 32, bw6 - 2, 22, lbl_b);
       b += 1;
     );
 
     gfx_set(0.10, 0.10, 0.10, 1);
     gfx_rect(0, 56, gfx_w, 26, 1);
     b = 0;
-    loop(5,
-      bx = b * bw5;
-      active = slider(13 + b);
+    loop(6,
+      bx = b * bw6;
+      active = slider(15 + b);
       active ? gfx_set(0.992, 0.847, 0.207, 1) : gfx_set(0.24, 0.22, 0.12, 1);
-      gfx_rect(bx + 1, 58, bw5 - 2, 22, 1);
+      gfx_rect(bx + 1, 58, bw6 - 2, 22, 1);
       active ? gfx_set(0, 0, 0, 1) : gfx_set(1, 1, 1, 1);
-      lbl_b = b==0?"L":b==1?"LM":b==2?"M":b==3?"HM":"H";
-      draw_text_centered(bx + 1, 58, bw5 - 2, 22, lbl_b);
+      lbl_b = b==0?"SUB":b==1?"LOW":b==2?"LM":b==3?"MID":b==4?"HIGH":"AIR";
+      draw_text_centered(bx + 1, 58, bw6 - 2, 22, lbl_b);
       b += 1;
     );
 
     gfx_set(0.10, 0.10, 0.10, 1);
     gfx_rect(0, 82, gfx_w, 28, 1);
-    mon = slider7;
+    mon = slider8;
     b = 0;
     loop(4,
       bx = b * bw4;
@@ -534,16 +569,16 @@ gfx_ext_flags |= 0x100;
 
     clicked ? (
       my < rh ? (
-        b = min(4, floor(mx / bw5));
-        slider(8 + b) = !slider(8 + b);
+        b = min(5, floor(mx / bw6));
+        slider(9 + b) = !slider(9 + b);
         sliderchange(-1);
       ) : my < (rh * 2) ? (
-        b = min(4, floor(mx / bw5));
-        slider(13 + b) = !slider(13 + b);
+        b = min(5, floor(mx / bw6));
+        slider(15 + b) = !slider(15 + b);
         sliderchange(-1);
       ) : (
         b = min(3, floor(mx / bw4)) + 1;
-        slider7 = (slider7 == b) ? 0 : b;
+        slider8 = (slider8 == b) ? 0 : b;
         sliderchange(-1);
       );
     );
@@ -552,30 +587,30 @@ gfx_ext_flags |= 0x100;
     gfx_rect(0, 0, gfx_w, gfx_h, 1);
 
     b = 0;
-    loop(5,
-      bx = b * bw5;
-      active = slider(8 + b);
+    loop(6,
+      bx = b * bw6;
+      active = slider(9 + b);
       active ? gfx_set(0.898, 0.223, 0.207, 1) : gfx_set(0.24, 0.12, 0.12, 1);
-      gfx_rect(bx + 1, 1, bw5 - 2, rh - 2, 1);
+      gfx_rect(bx + 1, 1, bw6 - 2, rh - 2, 1);
       gfx_set(1, 1, 1, 1);
-      lbl_b = b==0?"L":b==1?"LM":b==2?"M":b==3?"HM":"H";
-      draw_text_centered(bx + 1, 1, bw5 - 2, rh - 2, lbl_b);
+      lbl_b = b==0?"S":b==1?"L":b==2?"LM":b==3?"M":b==4?"H":"A";
+      draw_text_centered(bx + 1, 1, bw6 - 2, rh - 2, lbl_b);
       b += 1;
     );
 
     b = 0;
-    loop(5,
-      bx = b * bw5;
-      active = slider(13 + b);
+    loop(6,
+      bx = b * bw6;
+      active = slider(15 + b);
       active ? gfx_set(0.992, 0.847, 0.207, 1) : gfx_set(0.24, 0.22, 0.12, 1);
-      gfx_rect(bx + 1, rh + 1, bw5 - 2, rh - 2, 1);
+      gfx_rect(bx + 1, rh + 1, bw6 - 2, rh - 2, 1);
       active ? gfx_set(0, 0, 0, 1) : gfx_set(1, 1, 1, 1);
-      lbl_b = b==0?"L":b==1?"LM":b==2?"M":b==3?"HM":"H";
-      draw_text_centered(bx + 1, rh + 1, bw5 - 2, rh - 2, lbl_b);
+      lbl_b = b==0?"S":b==1?"L":b==2?"LM":b==3?"M":b==4?"H":"A";
+      draw_text_centered(bx + 1, rh + 1, bw6 - 2, rh - 2, lbl_b);
       b += 1;
     );
 
-    mon = slider7;
+    mon = slider8;
     b = 0;
     loop(4,
       bx = b * bw4;
