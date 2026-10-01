@@ -1,8 +1,8 @@
 desc:7R Band Monitor
 author:7thResonance
-version:1.7
+version:1.8
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
-changelog: added one more band. can now monitor just the sub extention below 54 hz
+changelog: fixed mid (sum) not being full band
 
 
 in_pin:Stereo Input
@@ -217,9 +217,10 @@ gfx_ext_flags |= 0x100;
 
   solo_any = slider15 || slider16 || slider17 || slider18 || slider19 || slider20;
   mute_any = slider9 || slider10 || slider11 || slider12 || slider13 || slider14;
+  band_filter_active = solo_any || mute_any;
   
-  // Filtering is active if any band is soloed, muted, or stereo/mon modes are non-default
-  filtering_active = solo_any || mute_any || slider7 != 0 || slider8 != 0;
+  // Process audio when band selection or channel monitoring is active.
+  filtering_active = band_filter_active || slider7 != 0 || slider8 != 0;
 
   act0 = solo_any ? slider15 : !slider9;
   act1 = solo_any ? slider16 : !slider10;
@@ -301,13 +302,22 @@ gfx_ext_flags |= 0x100;
     b1_R   = split_hp(rem1_R, 0, 1);
     b0_R   = split_lp(rem1_R, 0, 1);
 
-    outL = 0; outR = 0;
-    act0 ? ( outL += b0_L; outR += b0_R; );
-    act1 ? ( outL += b1_L; outR += b1_R; );
-    act2 ? ( outL += b2_L; outR += b2_R; );
-    act3 ? ( outL += b3_L; outR += b3_R; );
-    act4 ? ( outL += b4_L; outR += b4_R; );
-    act5 ? ( outL += b5_L; outR += b5_R; );
+    filteredL = 0; filteredR = 0;
+    act0 ? ( filteredL += b0_L; filteredR += b0_R; );
+    act1 ? ( filteredL += b1_L; filteredR += b1_R; );
+    act2 ? ( filteredL += b2_L; filteredR += b2_R; );
+    act3 ? ( filteredL += b3_L; filteredR += b3_R; );
+    act4 ? ( filteredL += b4_L; filteredR += b4_R; );
+    act5 ? ( filteredL += b5_L; filteredR += b5_R; );
+
+    // The complete crossover bank need not be summed when every band is active.
+    // This preserves the input exactly in channel-monitor modes and avoids
+    // crossover reconstruction dips from making parts of the spectrum disappear.
+    band_filter_active ? (
+      outL = filteredL; outR = filteredR;
+    ) : (
+      outL = srcL; outR = srcR;
+    );
 
     mon = slider8;
     mon == 0 ? ( finalL = outL;            finalR = outR;            ) :
