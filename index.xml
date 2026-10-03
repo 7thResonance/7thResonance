@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="cc02cedf5752ab8042974be83a264b609763c6d0">
+<index version="1" name="7thResonance" commit="7d213f3c53016b01f7239d5e7a1b1d8116c4dcf9">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -557,6 +557,10 @@ added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
       <version name="1.2" author="7thResonance" time="2026-09-15T06:23:14Z">
         <changelog><![CDATA[- made things much smaller with knobs. suitable for docking.]]></changelog>
         <source main="main">https://github.com/7thResonance/7thResonance/raw/37b965b3cc0615aebcb589e9ecbb5600560cd9ea/Utilities/7R%20FX%20Send%20Manager.lua</source>
+      </version>
+      <version name="1.3" author="7thResonance" time="2026-10-03T20:24:05Z">
+        <changelog><![CDATA[- reduced CPU use]]></changelog>
+        <source main="main">https://github.com/7thResonance/7thResonance/raw/7d213f3c53016b01f7239d5e7a1b1d8116c4dcf9/Utilities/7R%20FX%20Send%20Manager.lua</source>
       </version>
     </reapack>
     <reapack name="7R Insert FX or Instruments or Track Template Under Mouse cursor (Track or Item, Master).lua" type="script" desc="7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)">
