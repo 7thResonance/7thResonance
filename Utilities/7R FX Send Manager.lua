@@ -1,8 +1,8 @@
 --[[
 @description 7R FX Send Manager
 @author 7thResonance
-@version 1.2
-@changelog - made things much smaller with knobs. suitable for docking.
+@version 1.3
+@changelog - reduced CPU use
 @about Opens GUI to mark tracks to be a FX send target
     - Autoloads marked tracks on new projects
     - Saves position and size of GUI
@@ -42,6 +42,11 @@ local MOUSE_RIGHT = reaper.ImGui_MouseButton_Right and reaper.ImGui_MouseButton_
 -- State
 local FX_TRACKS = {}    -- [guid] = true
 local FX_ORDER = {}     -- ordered guids
+local TRACK_BY_GUID = {}
+local TRACK_NAME_BY_GUID = {}
+local TRACK_STATE_COUNT = nil
+local TRACK_COUNT = -1
+local TRACK_PROJECT = nil
 local show_list = false
 local default_db = tonumber(reaper.GetExtState(EXT_SECTION, "default_db")) or DEFAULT_DB
 local default_db_text = string.format("%.1f", default_db)
@@ -70,40 +75,16 @@ local function get_all_tracks()
 end
 
 local function find_track(guid)
-  for i=0, reaper.CountTracks(0)-1 do
-    local tr = reaper.GetTrack(0,i)
-    if reaper.GetTrackGUID(tr) == guid then return tr end
-  end
+  return TRACK_BY_GUID[guid]
 end
 
 local function get_selected()
   local sel = {}
   for i=0, reaper.CountSelectedTracks(0)-1 do
     local tr = reaper.GetSelectedTrack(0,i)
-    sel[reaper.GetTrackGUID(tr)] = tr
+    sel[#sel + 1] = tr
   end
   return sel
-end
-
-local function guid_send_index(src, dest)
-  for i=0, reaper.GetTrackNumSends(src,0)-1 do
-    if reaper.GetTrackSendInfo_Value(src,0,i,'P_DESTTRACK') == dest then return i end
-  end
-end
-
-local function get_send(src, dest)
-  local idx = guid_send_index(src,dest)
-  return idx and reaper.GetTrackSendInfo_Value(src,0,idx,'D_VOL') or nil
-end
-
-local function set_send(src, dest, v)
-  local idx = guid_send_index(src,dest)
-  if idx then reaper.SetTrackSendInfo_Value(src,0,idx,'D_VOL',v) end
-end
-
-local function remove_send(src, dest)
-  local idx = guid_send_index(src,dest)
-  if idx then reaper.RemoveTrackSend(src,0,idx) end
 end
 
 local function db2lin(db)
@@ -123,10 +104,21 @@ local function db_label(db)
   return string.format("%.1f", db)
 end
 
+local TEXT_SIZE_CACHE = {}
+local function calc_text_size(text)
+  local size = TEXT_SIZE_CACHE[text]
+  if not size then
+    local w, h = reaper.ImGui_CalcTextSize(ctx, text)
+    size = { w, h }
+    TEXT_SIZE_CACHE[text] = size
+  end
+  return size[1], size[2]
+end
+
 local function fit_text(text, max_w)
-  if reaper.ImGui_CalcTextSize(ctx, text) <= max_w then return text end
+  if calc_text_size(text) <= max_w then return text end
   local out = text
-  while #out > 1 and reaper.ImGui_CalcTextSize(ctx, out .. "..") > max_w do
+  while #out > 1 and calc_text_size(out .. "..") > max_w do
     out = string.sub(out, 1, #out - 1)
   end
   return out .. ".."
@@ -166,11 +158,26 @@ local function save_fx()
   reaper.SetExtState(EXT_SECTION, EXT_CACHE, table.concat(cl,','), true)
 end
 
-local function update_order()
+local function update_order(force)
+  local project = reaper.EnumProjects(-1, "")
+  local state_count = reaper.GetProjectStateChangeCount(0)
+  local track_count = reaper.CountTracks(0)
+  if not force and project == TRACK_PROJECT and state_count == TRACK_STATE_COUNT and track_count == TRACK_COUNT then
+    return
+  end
+
+  TRACK_PROJECT = project
+  TRACK_STATE_COUNT = state_count
+  TRACK_COUNT = track_count
+  TRACK_BY_GUID = {}
+  TRACK_NAME_BY_GUID = {}
   FX_ORDER = {}
-  for i=0, reaper.CountTracks(0)-1 do
+  for i=0, track_count-1 do
     local tr = reaper.GetTrack(0,i)
     local g = reaper.GetTrackGUID(tr)
+    local _, name = reaper.GetTrackName(tr, '')
+    TRACK_BY_GUID[g] = tr
+    TRACK_NAME_BY_GUID[g] = name
     if FX_TRACKS[g] then table.insert(FX_ORDER,g) end
   end
 end
@@ -179,6 +186,22 @@ end
 local function color(r, g, b, a)
   return reaper.ImGui_ColorConvertDouble4ToU32(r, g, b, a)
 end
+
+-- Color conversion is constant for this UI, so do it once instead of once per widget per frame.
+local COLORS = {
+  knob_fill_send = color(0.20, 0.21, 0.23, 1.00),
+  knob_fill_empty = color(0.13, 0.13, 0.14, 1.00),
+  ring_hovered = color(0.74, 0.76, 0.80, 1.00),
+  ring = color(0.43, 0.45, 0.48, 1.00),
+  accent_active = color(0.95, 0.78, 0.36, 1.00),
+  accent = color(0.42, 0.68, 0.96, 1.00),
+  knob_text = color(0.92, 0.93, 0.95, 1.00),
+  bar_hovered = color(0.12, 0.14, 0.14, 1.00),
+  bar = color(0.08, 0.09, 0.09, 1.00),
+  bar_fill = color(0.12, 0.31, 0.24, 0.95),
+  bar_border = color(0.20, 0.23, 0.23, 1.00),
+  bar_text_send = color(0.71, 0.92, 0.98, 1.00),
+}
 
 local function Knob(label, val_db, has_send, size, allow_remove, show_value)
   if allow_remove == nil then allow_remove = true end
@@ -212,10 +235,10 @@ local function Knob(label, val_db, has_send, size, allow_remove, show_value)
   local cy = y + size * 0.5
   local radius = size * 0.43
   local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
-  local fill_col = has_send and color(0.20, 0.21, 0.23, 1.00) or color(0.13, 0.13, 0.14, 1.00)
-  local ring_col = hovered and color(0.74, 0.76, 0.80, 1.00) or color(0.43, 0.45, 0.48, 1.00)
-  local accent_col = active and color(0.95, 0.78, 0.36, 1.00) or color(0.42, 0.68, 0.96, 1.00)
-  local text_col = has_send and color(0.92, 0.93, 0.95, 1.00) or color(0.42, 0.68, 0.96, 1.00)
+  local fill_col = has_send and COLORS.knob_fill_send or COLORS.knob_fill_empty
+  local ring_col = hovered and COLORS.ring_hovered or COLORS.ring
+  local accent_col = active and COLORS.accent_active or COLORS.accent
+  local text_col = has_send and COLORS.knob_text or COLORS.accent
 
   reaper.ImGui_DrawList_AddCircleFilled(draw_list, cx, cy, radius, fill_col, 32)
   reaper.ImGui_DrawList_AddCircle(draw_list, cx, cy, radius, ring_col, 32, hovered and 2.0 or 1.3)
@@ -229,7 +252,7 @@ local function Knob(label, val_db, has_send, size, allow_remove, show_value)
 
   if show_value then
     local label_text = has_send and db_label(val_db) or "+"
-    local tw, th = reaper.ImGui_CalcTextSize(ctx, label_text)
+    local tw, th = calc_text_size(label_text)
     reaper.ImGui_DrawList_AddText(draw_list, cx - tw * 0.5, cy - th * 0.5, text_col, label_text)
   end
 
@@ -258,10 +281,10 @@ local function SendBar(label, text, val_db, has_send, width, height)
   if not has_send and clicked then action = "add" end
 
   local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
-  local bg_col = hovered and color(0.12, 0.14, 0.14, 1.00) or color(0.08, 0.09, 0.09, 1.00)
-  local fill_col = color(0.12, 0.31, 0.24, 0.95)
-  local border_col = color(0.20, 0.23, 0.23, 1.00)
-  local text_col = has_send and color(0.71, 0.92, 0.98, 1.00) or color(0.42, 0.68, 0.96, 1.00)
+  local bg_col = hovered and COLORS.bar_hovered or COLORS.bar
+  local fill_col = COLORS.bar_fill
+  local border_col = COLORS.bar_border
+  local text_col = has_send and COLORS.bar_text_send or COLORS.accent
 
   reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y, x + width, y + height, bg_col, 0)
   if has_send then
@@ -271,9 +294,9 @@ local function SendBar(label, text, val_db, has_send, width, height)
   reaper.ImGui_DrawList_AddRect(draw_list, x, y, x + width, y + height, border_col, 0, 0, 1)
 
   local right_text = has_send and db_label(val_db) or "+"
-  local right_w, right_h = reaper.ImGui_CalcTextSize(ctx, right_text)
+  local right_w, right_h = calc_text_size(right_text)
   local name = fit_text(text, width - right_w - 12)
-  local _, name_h = reaper.ImGui_CalcTextSize(ctx, name)
+  local _, name_h = calc_text_size(name)
   reaper.ImGui_DrawList_AddText(draw_list, x + 4, y + (height - name_h) * 0.5, text_col, name)
   reaper.ImGui_DrawList_AddText(draw_list, x + width - right_w - 4, y + (height - right_h) * 0.5, text_col, right_text)
 
@@ -330,7 +353,7 @@ local function draw_list()
         local g = guids[i]
         local ck = FX_TRACKS[g] or false
         local changed, new = reaper.ImGui_Checkbox(ctx, nm, ck)
-        if changed then FX_TRACKS[g] = new and true or nil; save_fx(); update_order() end
+        if changed then FX_TRACKS[g] = new and true or nil; save_fx(); update_order(true) end
       end
       reaper.ImGui_EndChild(ctx)
     end
@@ -339,52 +362,91 @@ local function draw_list()
   end
 end
 
+-- Snapshot selected-track sends once per frame. The old row loop searched every
+-- selected track's send list again for every destination row.
+local function snapshot_selected_sends(selected)
+  local sends = {}
+  if #selected == 0 or #FX_ORDER == 0 then return sends end
+
+  local targets = {}
+  for _, guid in ipairs(FX_ORDER) do
+    local dest = TRACK_BY_GUID[guid]
+    if dest then targets[dest] = true end
+  end
+
+  for _, src in ipairs(selected) do
+    local by_dest = {}
+    sends[src] = by_dest
+    for i=0, reaper.GetTrackNumSends(src, 0)-1 do
+      local dest = reaper.GetTrackSendInfo_Value(src, 0, i, 'P_DESTTRACK')
+      -- Keep the first matching send, as the previous lookup did.
+      if targets[dest] and not by_dest[dest] then
+        by_dest[dest] = {
+          index = i,
+          value = reaper.GetTrackSendInfo_Value(src, 0, i, 'D_VOL'),
+        }
+      end
+    end
+  end
+  return sends
+end
+
 -- Highest send value
-local function highest(selected, fxg)
+local function highest(selected, dest, sends)
   local m
-  local dest = find_track(fxg)
-  for _, tr in pairs(selected) do
-    local v = get_send(tr, dest)
+  for _, tr in ipairs(selected) do
+    local entry = sends[tr] and sends[tr][dest]
+    local v = entry and entry.value
     if v and (not m or v > m) then m = v end
   end
   return m
 end
 
 -- Apply delta change to sends
-local function apply_delta(selected, fxg, delta_db)
-  local dest = find_track(fxg)
-  for _, tr in pairs(selected) do
-    local v = get_send(tr, dest)
-    if v then
+local function apply_delta(selected, dest, sends, delta_db)
+  for _, tr in ipairs(selected) do
+    local entry = sends[tr] and sends[tr][dest]
+    if entry then
+      local v = entry.value
       local v_db = lin2db(v)
       local new_db = v_db + delta_db
       local new_lin = db2lin(new_db)
-      set_send(tr, dest, new_lin)
+      reaper.SetTrackSendInfo_Value(tr, 0, entry.index, 'D_VOL', new_lin)
+      entry.value = new_lin
     end
   end
 end
 
 local function add_sends_to_selected(selected, dest)
-  for _, tr in pairs(selected) do
+  local changed = false
+  for _, tr in ipairs(selected) do
     local idx = reaper.CreateTrackSend(tr, dest)
     if idx >= 0 then
       reaper.SetTrackSendInfo_Value(tr, 0, idx, 'D_VOL', db2lin(default_db))
+      changed = true
     end
   end
+  return changed
 end
 
-local function remove_sends_from_selected(selected, dest)
-  for _, tr in pairs(selected) do
-    remove_send(tr, dest)
+local function remove_sends_from_selected(selected, dest, sends)
+  local changed = false
+  for _, tr in ipairs(selected) do
+    local entry = sends[tr] and sends[tr][dest]
+    if entry then
+      reaper.RemoveTrackSend(tr, 0, entry.index)
+      changed = true
+    end
   end
+  return changed
 end
 
-local function draw_send_row(selected, g)
+local function draw_send_row(selected, g, sends)
   local trfx = find_track(g)
   if not trfx then return end
 
-  local hv_lin = highest(selected, g)
-  local _, fx_name = reaper.GetTrackName(trfx, '')
+  local hv_lin = highest(selected, trfx, sends)
+  local fx_name = TRACK_NAME_BY_GUID[g] or ''
   local has_send = hv_lin ~= nil
   local hv_db = has_send and lin2db(hv_lin) or default_db
   local row_h = compact_mode and 15 or 17
@@ -394,29 +456,75 @@ local function draw_send_row(selected, g)
   bar_w = math.max(compact_mode and 82 or 120, bar_w)
 
   local action = SendBar("##send_bar_"..g, fx_name, hv_db, has_send, bar_w, row_h)
+  local changed_sends = false
   if action == "add" then
-    add_sends_to_selected(selected, trfx)
+    changed_sends = add_sends_to_selected(selected, trfx)
   elseif action == "remove" then
-    remove_sends_from_selected(selected, trfx)
+    changed_sends = remove_sends_from_selected(selected, trfx, sends)
   end
 
   if has_send then
     reaper.ImGui_SameLine(ctx, 0, 2)
     local changed, new_db, knob_action = Knob("##send_knob_"..g, hv_db, true, knob_size, true, false)
     if changed then
-      apply_delta(selected, g, new_db - hv_db)
+      apply_delta(selected, trfx, sends, new_db - hv_db)
     end
     if knob_action == "remove" then
-      remove_sends_from_selected(selected, trfx)
+      changed_sends = remove_sends_from_selected(selected, trfx, sends) or changed_sends
     end
   end
+  return changed_sends
 end
 
 -- Init
 load_fx()
+update_order(true)
 reaper.SetExtState("7R_SendScripts", "manager_running", "true", true)
 
 -- Main loop
+local persisted_geometry = {
+  [EXT_POSX] = reaper.GetExtState(EXT_SECTION, EXT_POSX),
+  [EXT_POSY] = reaper.GetExtState(EXT_SECTION, EXT_POSY),
+  [EXT_W] = reaper.GetExtState(EXT_SECTION, EXT_W),
+  [EXT_H] = reaper.GetExtState(EXT_SECTION, EXT_H),
+}
+local geometry_sample = nil
+local pending_geometry = nil
+local geometry_changed_at = nil
+
+local function persist_geometry(geometry)
+  local values = {
+    [EXT_POSX] = geometry.x,
+    [EXT_POSY] = geometry.y,
+    [EXT_W] = geometry.w,
+    [EXT_H] = geometry.h,
+  }
+  for key, value in pairs(values) do
+    value = tostring(value)
+    if persisted_geometry[key] ~= value then
+      reaper.SetExtState(EXT_SECTION, key, value, true)
+      persisted_geometry[key] = value
+    end
+  end
+  pending_geometry = nil
+  geometry_changed_at = nil
+end
+
+local function update_geometry(p, s)
+  local current = { x = p[1], y = p[2], w = s[1], h = s[2] }
+  if not geometry_sample
+    or geometry_sample.x ~= current.x
+    or geometry_sample.y ~= current.y
+    or geometry_sample.w ~= current.w
+    or geometry_sample.h ~= current.h then
+    geometry_sample = current
+    pending_geometry = current
+    geometry_changed_at = reaper.time_precise()
+  elseif pending_geometry and reaper.time_precise() - geometry_changed_at >= 0.5 then
+    persist_geometry(pending_geometry)
+  end
+end
+
 local function main()
   -- window pos/size
   if win_x and win_y then reaper.ImGui_SetNextWindowPos(ctx, win_x, win_y, reaper.ImGui_Cond_FirstUseEver()) end
@@ -428,19 +536,21 @@ local function main()
   local visible, new_open = reaper.ImGui_Begin(ctx, script_name, open_main)
   open_main = new_open
   if visible then
-    -- save geom
-    local p={reaper.ImGui_GetWindowPos(ctx)}; local s={reaper.ImGui_GetWindowSize(ctx)}
-    reaper.SetExtState(EXT_SECTION, EXT_POSX, tostring(p[1]), true)
-    reaper.SetExtState(EXT_SECTION, EXT_POSY, tostring(p[2]), true)
-    reaper.SetExtState(EXT_SECTION, EXT_W, tostring(s[1]), true)
-    reaper.SetExtState(EXT_SECTION, EXT_H, tostring(s[2]), true)
+    local p = { reaper.ImGui_GetWindowPos(ctx) }
+    local s = { reaper.ImGui_GetWindowSize(ctx) }
+    update_geometry(p, s)
 
-    local sel = get_selected(); update_order()
+    update_order()
+    local sel = get_selected()
+    local sends = snapshot_selected_sends(sel)
     local _, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
     reaper.ImGui_BeginChild(ctx, '##send_list', -1, math.max(0, avail_h - 36), 0)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), compact_mode and 4 or 8, 0)
     for _, g in ipairs(FX_ORDER) do
-      draw_send_row(sel, g)
+      if draw_send_row(sel, g, sends) then
+        -- Removing a send shifts later send indexes, so refresh once after UI edits.
+        sends = snapshot_selected_sends(sel)
+      end
     end
     reaper.ImGui_PopStyleVar(ctx)
     reaper.ImGui_EndChild(ctx)
@@ -456,15 +566,21 @@ local function main()
     end
     draw_list()
 
-    reaper.ImGui_End(ctx)
   end
+  reaper.ImGui_End(ctx)
   if open_main then
     reaper.defer(main)
   else
     -- Clear the flag when window is closed
+    if pending_geometry then persist_geometry(pending_geometry) end
     reaper.SetExtState("7R_SendScripts", "manager_running", "false", true)
   end
 end
+
+reaper.atexit(function()
+  if pending_geometry then persist_geometry(pending_geometry) end
+  reaper.SetExtState("7R_SendScripts", "manager_running", "false", true)
+end)
 
 reaper.defer(main)
 
