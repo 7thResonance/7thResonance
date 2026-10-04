@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.9
-@changelog - If FX chain already open, doesnt float FX window.
+@version 3.10
+@changelog - improved performance of plugin list building, caching and GUI
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
@@ -42,6 +42,19 @@ local JS_INFO, JS                      = {}, {}
 local AU_INFO, AU, AUi                 = {}, {}, {}
 local CLAP_INFO, CLAP, CLAPi           = {}, {}, {}
 local LV2_INFO, LV2, LV2i              = {}, {}, {}
+local FX_ID_INDEX                       = {}
+local background_build_active = false
+local background_build_units = 0
+
+local function BuildCheckpoint()
+    if not background_build_active then return end
+    background_build_units = background_build_units + 1
+    -- Keep each rebuild slice short enough to let other deferred scripts run.
+    if background_build_units >= 64 then
+        background_build_units = 0
+        coroutine.yield()
+    end
+end
 
 -- Feature flags
 local ENABLE_FX_CHAINS = false -- set to true to enable FX Chains in the UI
@@ -56,6 +69,17 @@ local function ResetTables()
     AU_INFO, AU, AUi = {}, {}, {}
     CLAP_INFO, CLAP, CLAPi = {}, {}, {}
     LV2_INFO, LV2, LV2i = {}, {}, {}
+    FX_ID_INDEX = {}
+end
+
+local function IndexFXID(tbl, id, name)
+    if not id then return end
+    local index = FX_ID_INDEX[tbl]
+    if not index then
+        index = {}
+        FX_ID_INDEX[tbl] = index
+    end
+    if index[id] == nil then index[id] = name end
 end
 
 function MakeFXFiles()
@@ -108,10 +132,8 @@ function WriteToFile(path, data)
     end
 end
 
-function SerializeToFile(val, name, skipnewlines, depth)
-    skipnewlines = skipnewlines or false
-    depth = depth or 0
-    local tmp = string.rep(" ", depth)
+local function append_serialized_value(val, name, skipnewlines, depth, output)
+    output[#output + 1] = string.rep(" ", depth)
     if name then
         if type(name) == "number" and math.floor(name) == name then
             name = "[" .. name .. "]"
@@ -119,24 +141,35 @@ function SerializeToFile(val, name, skipnewlines, depth)
             name = string.gsub(name, "'", "''")
             name = "['" .. name .. "']"
         end
-        tmp = tmp .. name .. " = "
+        output[#output + 1] = name .. " = "
     end
+
     if type(val) == "table" then
-        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
+        output[#output + 1] = "{"
+        if not skipnewlines then output[#output + 1] = "\n" end
         for k, v in pairs(val) do
-            tmp = tmp .. SerializeToFile(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
+            BuildCheckpoint()
+            append_serialized_value(v, k, skipnewlines, depth + 1, output)
+            output[#output + 1] = ","
+            if not skipnewlines then output[#output + 1] = "\n" end
         end
-        tmp = tmp .. string.rep(" ", depth) .. "}"
+        output[#output + 1] = string.rep(" ", depth)
+        output[#output + 1] = "}"
     elseif type(val) == "number" then
-        tmp = tmp .. tostring(val)
+        output[#output + 1] = tostring(val)
     elseif type(val) == "string" then
-        tmp = tmp .. string.format("%q", val)
+        output[#output + 1] = string.format("%q", val)
     elseif type(val) == "boolean" then
-        tmp = tmp .. (val and "true" or "false")
+        output[#output + 1] = val and "true" or "false"
     else
-        tmp = tmp .. "nil"
+        output[#output + 1] = "nil"
     end
-    return tmp
+end
+
+function SerializeToFile(val, name, skipnewlines, depth)
+    local output = {}
+    append_serialized_value(val, name, skipnewlines or false, depth or 0, output)
+    return table.concat(output)
 end
 
 function StringToTable(str)
@@ -168,9 +201,10 @@ end
 local function FileExists(path)
     if not path then return false end
     if not reaper.JS_File_Stat then return false end
-    local a, b, c = reaper.JS_File_Stat(path)
+    local a = reaper.JS_File_Stat(path)
     if type(a) == 'boolean' then return a end
-    if type(a) == 'number' then return true end
+    -- JS_File_Stat returns 0 on success and a non-zero error code otherwise.
+    if type(a) == 'number' then return a == 0 end
     if type(a) == 'table' then return true end
     return false
 end
@@ -193,15 +227,22 @@ end
 local function GetFileStat(path)
     if not path then return nil end
     if not reaper.JS_File_Stat then return nil end
-    local a, b, c = reaper.JS_File_Stat(path)
-    -- a may be boolean (exists), number (size) or table depending on JS version
+    local a, b, c, d, e = reaper.JS_File_Stat(path)
+    -- JS_File_Stat returns status, size, accessed time, modified time, and
+    -- creation time. Keep the timestamps as strings; this API formats them.
     if type(a) == 'boolean' then
         if not a then return nil end
-        return { path = path, size = tonumber(b) or 0, mtime = tonumber(c) or 0 }
+        return { path = path, size = tonumber(b) or 0, mtime = tostring(c or ''), ctime = '' }
     elseif type(a) == 'number' then
-        return { path = path, size = tonumber(a) or 0, mtime = tonumber(b) or 0 }
+        if a ~= 0 then return nil end
+        return { path = path, size = tonumber(b) or 0, mtime = tostring(d or ''), ctime = tostring(e or '') }
     elseif type(a) == 'table' then
-        return { path = path, size = tonumber(a.size) or 0, mtime = tonumber(a.mtime) or 0 }
+        return {
+            path = path,
+            size = tonumber(a.size) or 0,
+            mtime = tostring(a.mtime or a.modified or ''),
+            ctime = tostring(a.ctime or a.created or ''),
+        }
     end
     return nil
 end
@@ -237,14 +278,15 @@ end
 local function StatEquals(a, b)
     if not a or not b then return false end
     if a.path ~= b.path then return false end
-    -- Compare size and mtime; allow exact match only
     if tonumber(a.size) ~= tonumber(b.size) then return false end
-    if tonumber(a.mtime) ~= tonumber(b.mtime) then return false end
+    if tostring(a.mtime or '') ~= tostring(b.mtime or '') then return false end
+    if tostring(a.ctime or '') ~= tostring(b.ctime or '') then return false end
     return true
 end
 
 local function GetDirFilesRecursive(dir, tbl, filter)
     for index = 0, math.huge do
+        BuildCheckpoint()
         local path = r.EnumerateSubdirectories(dir, index)
         if not path then break end
         tbl[#tbl + 1] = { dir = path, {} }
@@ -252,6 +294,7 @@ local function GetDirFilesRecursive(dir, tbl, filter)
     end
 
     for index = 0, math.huge do
+        BuildCheckpoint()
         local file = r.EnumerateFiles(dir, index)
         if not file then break end
         if file:find(filter, nil, true) then
@@ -262,12 +305,16 @@ end
 
 local function FindCategory(cat)
     for i = 1, #CAT do
+        BuildCheckpoint()
         if CAT[i].name == cat then return CAT[i].list end
     end
 end
 
 local function FindFXIDName(tbl, id, js)
+    local index = FX_ID_INDEX[tbl]
+    if not js and index then return index[id] end
     for i = 1, #tbl do
+        BuildCheckpoint()
         if js then
             if tbl[i].id:find(id) then return tbl[i].name end
         else
@@ -278,12 +325,14 @@ end
 
 function InTbl(tbl, val)
     for i = 1, #tbl do
+        BuildCheckpoint()
         if tbl[i].name == val then return tbl[i].fx end
     end
 end
 
 function AddDevList(val)
     for i = 1, #DEVELOPER_LIST do
+        BuildCheckpoint()
         if DEVELOPER_LIST[i] == " (" .. val .. ")" then return end
     end
     DEVELOPER_LIST[#DEVELOPER_LIST + 1] = " (" .. val .. ")"
@@ -306,6 +355,7 @@ local function ParseVST(name, ident)
     ident = os:match("Win") and ident:reverse():match("(.-)\\") or ident:reverse():match("(.-)/")
     ident = ident:reverse():gsub(" ", "_"):gsub("-", "_")
     VST_INFO[#VST_INFO + 1] = { id = ident, name = name }
+    IndexFXID(VST_INFO, ident, name)
     PLUGIN_LIST[#PLUGIN_LIST + 1] = name
 end
 
@@ -313,6 +363,7 @@ local function ParseJSFX(name, ident)
     if not name:match("^JS:") then return end
     JS[#JS + 1]                   = name
     JS_INFO[#JS_INFO + 1]         = { id = ident, name = name }
+    IndexFXID(JS_INFO, ident, name)
     PLUGIN_LIST[#PLUGIN_LIST + 1] = name
 end
 
@@ -326,6 +377,7 @@ local function ParseAU(name, ident)
         INSTRUMENTS[#INSTRUMENTS + 1] = name
     end
     AU_INFO[#AU_INFO + 1]         = { id = ident, name = name }
+    IndexFXID(AU_INFO, ident, name)
     PLUGIN_LIST[#PLUGIN_LIST + 1] = name
 end
 
@@ -339,6 +391,7 @@ local function ParseCLAP(name, ident)
         INSTRUMENTS[#INSTRUMENTS + 1] = name
     end
     CLAP_INFO[#CLAP_INFO + 1] = { id = ident, name = name }
+    IndexFXID(CLAP_INFO, ident, name)
     PLUGIN_LIST[#PLUGIN_LIST + 1] = name
 end
 
@@ -352,11 +405,13 @@ local function ParseLV2(name, ident)
         INSTRUMENTS[#INSTRUMENTS + 1] = name
     end
     LV2_INFO[#LV2_INFO + 1] = { id = ident, name = name }
+    IndexFXID(LV2_INFO, ident, name)
     PLUGIN_LIST[#PLUGIN_LIST + 1] = name
 end
 
 local function has_fx(tbl, val)
     for i = 1, #tbl do
+        BuildCheckpoint()
         if tbl[i] == val then return true end
     end
     return false
@@ -367,6 +422,7 @@ local function ParseFXTags()
     local tags_str  = GetFileContext(tags_path)
     local DEV       = true
     for line in tags_str:gmatch('[^\r\n]+') do
+        BuildCheckpoint()
         local category = line:match("^%[(.+)%]")
         if line:match("^%[(category)%]") then
             DEV = false
@@ -417,6 +473,7 @@ local function ParseCustomCategories()
     local fav_str  = GetFileContext(fav_path)
     local cur_cat_tbl
     for line in fav_str:gmatch('[^\r\n]+') do
+        BuildCheckpoint()
         local category = line:match("%[(.-)%]")
 
         if category then
@@ -458,6 +515,7 @@ local function SortFoldersINI(fav_str)
     local folders = {}
     local add
     for line in fav_str:gmatch('[^\r\n]+') do
+        BuildCheckpoint()
         local category = line:match("^%[(.-)%]")
         if category then
             if category:find("Folder", nil, true) then
@@ -465,11 +523,6 @@ local function SortFoldersINI(fav_str)
                 folders[#folders + 1] = { name = category }
             else
                 add = false
-            end
-            if settings then
-                settings.last_left_section = "all"
-                settings.last_left_value = ""
-                if save_settings then save_settings() end
             end
         end
         if folders[#folders] and not category and add then
@@ -572,6 +625,7 @@ local function ParseFavorites()
     local item_lookup = {}
     local current_folder
     for line in fav_str:gmatch('[^\r\n]+') do
+        BuildCheckpoint()
         local folder = line:match("^%[(Folder%d+)%]")
 
         if folder then current_folder = folder end
@@ -626,6 +680,7 @@ local function ParseFavorites()
             local folder_ID = line:match("(%d+)=")
 
             for i = 1, #CAT[#CAT].list do
+                BuildCheckpoint()
                 if CAT[#CAT].list[i].name == "Folder" .. folder_ID then
                     CAT[#CAT].list[i].name = folder_name
                 end
@@ -636,9 +691,12 @@ local function ParseFavorites()
     table.sort(CAT[#CAT].list, function(a, b) return tonumber(a.order) < tonumber(b.order) end)
 
     for i = 1, #CAT do
+        BuildCheckpoint()
         for j = #CAT[i].list, 1, -1 do
+            BuildCheckpoint()
             if CAT[i].list[j] then
                 for f = #CAT[i].list[j].fx, 1, -1 do
+                    BuildCheckpoint()
                     if CAT[i].list[j].fx[f]:find("R_ITEM_") then
                         table.remove(CAT[i].list[j].fx, f)
                     end
@@ -669,12 +727,16 @@ local function ConvertFileTreeToCATList(parsed_table, extension)
         rel_path = rel_path or ""
         local out = {}
         for _, child in ipairs(node) do
+            BuildCheckpoint()
             if type(child) == "table" then
                 if child.dir then
                     local folder_name = child.dir
                     local new_rel = (rel_path == "") and folder_name or (rel_path .. "/" .. folder_name)
                     local children_table = {}
-                    for _, v in ipairs(child) do table.insert(children_table, v) end
+                    for _, v in ipairs(child) do
+                        BuildCheckpoint()
+                        table.insert(children_table, v)
+                    end
                     local folder_entry = { name = folder_name, fx = convert_children(children_table, new_rel) }
                     table.insert(out, folder_entry)
                 end
@@ -705,6 +767,7 @@ local function FlattenCatCategoryToList(cat_name)
     local function collect_from_list(lst)
         if not lst then return end
         for _, entry in ipairs(lst) do
+            BuildCheckpoint()
             if type(entry) == 'string' then
                 table.insert(out, entry)
             elseif type(entry) == 'table' then
@@ -719,8 +782,10 @@ local function FlattenCatCategoryToList(cat_name)
         end
     end
     for i = 1, #CAT do
+        BuildCheckpoint()
         if CAT[i].name == cat_name and CAT[i].list then
             for _, e in ipairs(CAT[i].list) do
+                BuildCheckpoint()
                 if type(e) == 'string' then
                     table.insert(out, e)
                 elseif type(e) == 'table' then
@@ -744,6 +809,7 @@ local function BuildViews()
     -- All plugins (flat)
     views.all = {}
     for _, v in ipairs(PLUGIN_LIST or {}) do
+        BuildCheckpoint()
         table.insert(views.all, v)
     end
 
@@ -759,13 +825,17 @@ local function BuildViews()
 
     -- Instruments
     views.instruments = {}
-    for _, v in ipairs(INSTRUMENTS or {}) do table.insert(views.instruments, v) end
+    for _, v in ipairs(INSTRUMENTS or {}) do
+        BuildCheckpoint()
+        table.insert(views.instruments, v)
+    end
 
     -- Deduplicate PLUGIN_LIST-derived views if necessary (simple pass)
     local function dedupe(tbl)
         local seen = {}
         local out = {}
         for _, s in ipairs(tbl) do
+            BuildCheckpoint()
             if type(s) == 'string' and not seen[s] then seen[s]=true; table.insert(out, s) end
         end
         return out
@@ -786,6 +856,7 @@ local function BuildViews()
     -- If instruments list is empty after rebuild, try to infer instruments from PLUGIN_LIST
     if #views.instruments == 0 and PLUGIN_LIST and #PLUGIN_LIST > 0 then
         for _, pname in ipairs(PLUGIN_LIST) do
+            BuildCheckpoint()
             if type(pname) == 'string' then
                 local p = pname
                 if p:match("^%s*VSTi%s*:") or p:match("^%s*VST3i%s*:") or p:match("^%s*AUi%s*:") or p:match("^%s*CLAPi%s*:") or p:match("^%s*LV2i%s*:") then
@@ -817,12 +888,14 @@ local function AllPluginsCategory()
     if #LV2i ~= 0 then table.insert(CAT[#CAT].list, { name = "LV2i", fx = LV2i }) end
 
     for i = 1, #CAT do
+        BuildCheckpoint()
         local is_fxchains = (CAT[i].name == "FX CHAINS")
         if CAT[i].name ~= "FOLDERS" and (not is_fxchains or ENABLE_FX_CHAINS) and CAT[i].name ~= "TRACK TEMPLATES" then
             table.sort(CAT[i].list,
                 function(a, b) if a.name and b.name then return a.name:lower() < b.name:lower() end end)
         end
         for j = 1, #CAT[i].list do
+            BuildCheckpoint()
             if CAT[i].list[j].fx then
                 table.sort(CAT[i].list[j].fx, function(a, b) if a and b then return a:lower() < b:lower() end end)
             end
@@ -837,6 +910,7 @@ function GenerateFxList()
     PLUGIN_LIST[#PLUGIN_LIST + 1] = "Video processor"
 
     for i = 0, math.huge do
+        BuildCheckpoint()
         local retval, name, ident = r.EnumInstalledFX(i)
         if not retval then break end
         ParseVST(name, ident)
@@ -857,6 +931,7 @@ function GenerateFxList()
             -- Wrap top-level strings into a default folder entry so the renderer sees entries with name/fx
             local fc_list = {}
             for _, v in ipairs(converted_chains) do
+                BuildCheckpoint()
                 if type(v) == "table" then
                     table.insert(fc_list, v)
                 else
@@ -888,6 +963,7 @@ function GenerateFxList()
         -- The CAT expects a list of entries with name/fx; wrap converted as top-level list entries
         local tt_list = {}
         for _, v in ipairs(converted) do
+            BuildCheckpoint()
             if type(v) == "table" then
                 table.insert(tt_list, v)
             else
@@ -912,8 +988,10 @@ function GenerateFxList()
 
         -- Also flatten templates into PLUGIN_LIST so they're searchable via the main search box
         for _, entry in ipairs(tt_list) do
+            BuildCheckpoint()
             if entry.fx then
                 for _, fxname in ipairs(entry.fx) do
+                    BuildCheckpoint()
                     if type(fxname) == "string" then
                         PLUGIN_LIST[#PLUGIN_LIST + 1] = fxname
                     end
@@ -1132,6 +1210,11 @@ end
 
 
 local ctx = reaper.ImGui_CreateContext("7R FX Inserter")
+local list_clipper = nil
+if type(reaper.ImGui_CreateListClipper) == "function" then
+    list_clipper = reaper.ImGui_CreateListClipper(ctx)
+    reaper.ImGui_Attach(ctx, list_clipper)
+end
 -- Create font after loading settings in init to allow user-specified size; temporary default here
 local font = reaper.ImGui_CreateFont('sans-serif', settings and settings.font_size or 11)
 local bold_font = nil -- Bold font not available in this ReaImGui build
@@ -1142,6 +1225,9 @@ local window_open = true
 local selected_fx_idx = 1
 local left_selection = { section = "all", index = 0 }
 local settings_window_open = false
+local background_rebuild = nil
+local developer_fx_cache = { plugins = nil, tag = nil, items = {} }
+local display_rows_cache = { list = nil, search = nil, hide_duplicates = nil, rows = {}, has_folders = false }
 
 -- Search and keyboard navigation
 local search_text = ""
@@ -1256,6 +1342,230 @@ local function load_settings()
             if tbl.last_search_text ~= nil then settings.last_search_text = tbl.last_search_text end
             if tbl.expanded_nodes ~= nil and type(tbl.expanded_nodes) == 'table' then settings.expanded_nodes = tbl.expanded_nodes end
   end
+end
+
+local function capture_fx_state()
+    return {
+        CAT = CAT, DEVELOPER_LIST = DEVELOPER_LIST, PLUGIN_LIST = PLUGIN_LIST, INSTRUMENTS = INSTRUMENTS,
+        VST_INFO = VST_INFO, VST = VST, VSTi = VSTi, VST3 = VST3, VST3i = VST3i,
+        JS_INFO = JS_INFO, JS = JS, AU_INFO = AU_INFO, AU = AU, AUi = AUi,
+        CLAP_INFO = CLAP_INFO, CLAP = CLAP, CLAPi = CLAPi,
+        LV2_INFO = LV2_INFO, LV2 = LV2, LV2i = LV2i, FX_ID_INDEX = FX_ID_INDEX, views = views,
+    }
+end
+
+local function restore_fx_state(state)
+    CAT, DEVELOPER_LIST, PLUGIN_LIST, INSTRUMENTS = state.CAT, state.DEVELOPER_LIST, state.PLUGIN_LIST, state.INSTRUMENTS
+    VST_INFO, VST, VSTi, VST3, VST3i = state.VST_INFO, state.VST, state.VSTi, state.VST3, state.VST3i
+    JS_INFO, JS = state.JS_INFO, state.JS
+    AU_INFO, AU, AUi = state.AU_INFO, state.AU, state.AUi
+    CLAP_INFO, CLAP, CLAPi = state.CLAP_INFO, state.CLAP, state.CLAPi
+    LV2_INFO, LV2, LV2i = state.LV2_INFO, state.LV2, state.LV2i
+    FX_ID_INDEX = state.FX_ID_INDEX
+    views = state.views
+end
+
+local function collect_current_stats()
+    local current_stats = {}
+    for key, path in pairs(GetWatchedFiles()) do
+        local stat = GetFileStat(path)
+        if stat then current_stats[key] = stat end
+    end
+    return current_stats
+end
+
+local function start_background_rebuild(current_stats)
+    if background_rebuild then return false end
+
+    local base_state = capture_fx_state()
+    local thread = coroutine.create(function()
+        background_build_active = true
+        background_build_units = 0
+        views = { all = {}, fxchains = {}, tracktemplates = {}, instruments = {} }
+        PLUGIN_LIST, CAT, DEVELOPER_LIST = MakeFXFiles()
+        BuildViews()
+        if DEVELOPER_LIST and #DEVELOPER_LIST > 1 then
+            table.sort(DEVELOPER_LIST, function(a, b)
+                local aa = (a and a:match("%((.-)%)") or a or ""):lower()
+                local bb = (b and b:match("%((.-)%)") or b or ""):lower()
+                return aa < bb
+            end)
+        end
+        background_build_active = false
+    end)
+
+    background_rebuild = {
+        thread = thread,
+        base_state = base_state,
+        work_state = nil,
+        stats = current_stats,
+    }
+    return true
+end
+
+local function advance_background_rebuild()
+    local job = background_rebuild
+    if not job then return end
+
+    restore_fx_state(job.work_state or job.base_state)
+    local ok, err = coroutine.resume(job.thread)
+    job.work_state = capture_fx_state()
+
+    if not ok then
+        background_build_active = false
+        restore_fx_state(job.base_state)
+        background_rebuild = nil
+        reaper.ShowConsoleMsg("FX Inserter: cache rebuild failed: " .. tostring(err) .. "\n")
+    elseif coroutine.status(job.thread) == "dead" then
+        background_build_active = false
+        restore_fx_state(job.work_state)
+        if job.stats and next(job.stats) then WriteStatFile(job.stats) end
+        developer_fx_cache = { plugins = nil, tag = nil, items = {} }
+        display_rows_cache = { list = nil, search = nil, hide_duplicates = nil, rows = {}, has_folders = false }
+        background_rebuild = nil
+    else
+        restore_fx_state(job.base_state)
+    end
+end
+
+local function get_display_rows(base_list)
+    local hide_duplicates = settings.hide_vst2_duplicates
+    if display_rows_cache.list == base_list
+        and display_rows_cache.search == search_text
+        and display_rows_cache.hide_duplicates == hide_duplicates then
+        return display_rows_cache.rows, display_rows_cache.has_folders
+    end
+
+    local rows = {}
+    local has_folders = false
+    if base_list and #base_list > 0 then
+        local vst3_basenames = {}
+        if hide_duplicates then
+            for _, name in ipairs(base_list) do
+                if type(name) == "string" and name:match("^VST3i?%s*:") then
+                    local base = name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
+                    vst3_basenames[base] = true
+                end
+            end
+        end
+
+        local search_lower = search_text:lower()
+        for _, fx_name in ipairs(base_list) do
+            if type(fx_name) == "table" then
+                if search_text == "" then
+                    rows[#rows + 1] = {
+                        label = fx_name.dir and (fx_name.dir .. "/") or "(Folder)",
+                        is_folder = true,
+                    }
+                    has_folders = true
+                end
+            else
+                local skip = hide_duplicates and fx_name:match("^VSTi?%s*:") ~= nil
+                if skip then
+                    local base = fx_name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
+                    skip = vst3_basenames[base] == true
+                end
+
+                if not skip then
+                    local label = fx_name
+                    local tooltip
+                    if fx_name:match("%.RfxChain$") or fx_name:match("%.RTrackTemplate$") then
+                        local basename = fx_name:match("([^/\\]+)$") or fx_name
+                        label = basename:gsub("%.[^%.]+$", "")
+                        if fx_name:match("%.RfxChain$") then
+                            tooltip = "FX Chain: " .. (reaper.GetResourcePath() .. "/FXChains/" .. fx_name)
+                        else
+                            tooltip = "Track Template: " .. (reaper.GetResourcePath() .. "/TrackTemplates/" .. fx_name)
+                        end
+                    else
+                        label = label:gsub("^%s*[%w_]+%s*:%s*", "")
+                        tooltip = fx_name
+                    end
+
+                    local include = true
+                    if search_text ~= "" then
+                        include = label:lower():find(search_lower, 1, true) ~= nil
+                            or fx_name:lower():find(search_lower, 1, true) ~= nil
+                    end
+                    if include then
+                        rows[#rows + 1] = { label = label, original = fx_name, tooltip = tooltip }
+                    end
+                end
+            end
+        end
+
+        table.sort(rows, function(a, b)
+            if a.is_folder ~= b.is_folder then return a.is_folder == true end
+            return (a.label or ""):lower() < (b.label or ""):lower()
+        end)
+    end
+
+    display_rows_cache = {
+        list = base_list,
+        search = search_text,
+        hide_duplicates = hide_duplicates,
+        rows = rows,
+        has_folders = has_folders,
+    }
+    return rows, has_folders
+end
+
+local function for_each_visible_row(rows, has_folders, render_row)
+    if #rows == 0 then return end
+    local can_clip = not has_folders and list_clipper
+        and type(reaper.ImGui_ListClipper_Begin) == "function"
+        and type(reaper.ImGui_ListClipper_Step) == "function"
+        and type(reaper.ImGui_ListClipper_GetDisplayRange) == "function"
+
+    if not can_clip then
+        for index, row in ipairs(rows) do render_row(index, row) end
+        return
+    end
+
+    reaper.ImGui_ListClipper_Begin(list_clipper, #rows)
+    if type(reaper.ImGui_ListClipper_IncludeItemByIndex) == "function"
+        and highlighted_fx_index >= 1 and highlighted_fx_index <= #rows then
+        reaper.ImGui_ListClipper_IncludeItemByIndex(list_clipper, highlighted_fx_index - 1)
+    end
+    while reaper.ImGui_ListClipper_Step(list_clipper) do
+        local display_start, display_end = reaper.ImGui_ListClipper_GetDisplayRange(list_clipper)
+        for index = display_start + 1, math.min(display_end, #rows) do
+            render_row(index, rows[index])
+        end
+    end
+end
+
+local flat_fx_list_cache = setmetatable({}, { __mode = "k" })
+local function for_each_visible_fx(list, render_fx)
+    if #list == 0 then return end
+    local all_strings = flat_fx_list_cache[list]
+    if all_strings == nil then
+        all_strings = true
+        for index = 1, #list do
+            if type(list[index]) ~= "string" then
+                all_strings = false
+                break
+            end
+        end
+        flat_fx_list_cache[list] = all_strings
+    end
+
+    local can_clip = all_strings and list_clipper
+        and type(reaper.ImGui_ListClipper_Begin) == "function"
+        and type(reaper.ImGui_ListClipper_Step) == "function"
+        and type(reaper.ImGui_ListClipper_GetDisplayRange) == "function"
+    if not can_clip then
+        for index = 1, #list do render_fx(index, list[index]) end
+        return
+    end
+
+    reaper.ImGui_ListClipper_Begin(list_clipper, #list)
+    while reaper.ImGui_ListClipper_Step(list_clipper) do
+        local display_start, display_end = reaper.ImGui_ListClipper_GetDisplayRange(list_clipper)
+        for index = display_start + 1, math.min(display_end, #list) do
+            render_fx(index, list[index])
+        end
+    end
 end
 
 
@@ -1545,46 +1855,8 @@ local function draw_main_gui_tree_contents()
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_IndentSpacing(), 5)
         -- If there's a search, show flat filtered results (like the two-pane search)
         if search_text ~= "" then
-            local rows = {}
-            local search_lower = search_text:lower()
-
-            -- Build a set of VST3 base names to filter VST2 duplicates when requested
-            local vst3_basenames = {}
-            if settings.hide_vst2_duplicates then
-                for _, name in ipairs(PLUGIN_LIST) do
-                    if type(name) == "string" and name:match("^VST3i?%s*:") then
-                        local base = name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
-                        vst3_basenames[base] = true
-                    end
-                end
-            end
-
-            for _, fx_name in ipairs(PLUGIN_LIST) do
-                if type(fx_name) == "string" then
-                    local skip = false
-                    if settings.hide_vst2_duplicates and fx_name:match("^VSTi?%s*:") then
-                        local base = fx_name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
-                        if vst3_basenames[base] then skip = true end
-                    end
-                    if not skip then
-                        local is_file_entry = fx_name:match("%.RfxChain$") or fx_name:match("%.RTrackTemplate$")
-                        local label = fx_name
-                        if is_file_entry then
-                            local basename = fx_name:match("([^/\\]+)$") or fx_name
-                            label = basename:gsub("%.RfxChain$", ""):gsub("%.RTrackTemplate$", "")
-                        else
-                            label = label:gsub("^%s*[%w_]+%s*:%s*", "")
-                        end
-                        if label:lower():find(search_lower, 1, true) or fx_name:lower():find(search_lower, 1, true) then
-                            rows[#rows+1] = { label = label, original = fx_name }
-                        end
-                    end
-                end
-            end
-
-            table.sort(rows, function(a,b) return (a.label or ""):lower() < (b.label or ""):lower() end)
-
-            for i,row in ipairs(rows) do
+            local rows = get_display_rows(PLUGIN_LIST)
+            for_each_visible_row(rows, false, function(i, row)
                 local unique_label = row.label .. "##" .. row.original
                 local is_selected = (i == highlighted_fx_index)
                 local clicked = reaper.ImGui_Selectable(ctx, unique_label, is_selected)
@@ -1609,7 +1881,7 @@ local function draw_main_gui_tree_contents()
                         window_open = false
                     end
                 end
-            end
+            end)
 
             -- Keyboard navigation for single-pane search results
             if #rows > 0 then
@@ -1661,8 +1933,7 @@ local function draw_main_gui_tree_contents()
                                         -- Render the fx list directly without an intermediate TreeNode
                                         local function render_fx_list(list, depth)
                                                         depth = depth or 0
-                                                        for idx=1, #list do
-                                                            local fx = list[idx]
+                                                        for_each_visible_fx(list, function(idx, fx)
                                                             if type(fx) == "table" then
                                                                 -- folder-like entry
                                                                 local node_name = fx.name or "Folder"
@@ -1705,7 +1976,7 @@ local function draw_main_gui_tree_contents()
                                                                     end
                                                                 end
                                                             end
-                                                        end
+                                                        end)
                                                     end
                                                     render_fx_list(entry.fx or {}, 0)
                                     else
@@ -1716,8 +1987,7 @@ local function draw_main_gui_tree_contents()
                                             -- Recursive renderer for mixed folder/file entries
                                             local function render_fx_list(list, depth)
                                                 depth = depth or 0
-                                                for idx=1, #list do
-                                                    local fx = list[idx]
+                                                for_each_visible_fx(list, function(idx, fx)
                                                     if type(fx) == "table" then
                                                         -- folder-like entry
                                                         local node_name = fx.name or "Folder"
@@ -1760,7 +2030,7 @@ local function draw_main_gui_tree_contents()
                                                             end
                                                         end
                                                     end
-                                                end
+                                                end)
                                             end
                                             render_fx_list(entry.fx or {}, 0)
                                             reaper.ImGui_TreePop(ctx)
@@ -1780,8 +2050,8 @@ local function draw_main_gui_tree_contents()
 
         -- Restore style
         reaper.ImGui_PopStyleVar(ctx)
-        reaper.ImGui_EndChild(ctx)
     end
+    reaper.ImGui_EndChild(ctx)
 end
 
 
@@ -1792,6 +2062,7 @@ local function draw_main_gui()
     local window_flags = reaper.ImGui_WindowFlags_NoNavInputs() | reaper.ImGui_WindowFlags_NoNavFocus()
     local visible, open = reaper.ImGui_Begin(ctx, "7R FX Inserter", true, window_flags)
     if not visible then
+        reaper.ImGui_End(ctx)
         return open
     end
 
@@ -1827,11 +2098,10 @@ local function draw_main_gui()
         arrow_key_pressed = false
     end
     reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, "Refresh", 70, 0) then
-        -- Rebuild parser-derived lists and update views
-        PLUGIN_LIST, CAT, DEVELOPER_LIST = MakeFXFiles()
-        BuildViews()
-        reaper.ShowMessageBox("FX lists refreshed.", "Refresh complete", 0)
+    if reaper.ImGui_Button(ctx, background_rebuild and "Working..." or "Refresh", 80, 0) then
+        if not background_rebuild then
+            start_background_rebuild(collect_current_stats())
+        end
     end
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Settings", 90, 0) then
@@ -1934,8 +2204,8 @@ local function draw_main_gui()
             reaper.ImGui_TextDisabled(ctx, "(No developers)")
         end
 
-            reaper.ImGui_EndChild(ctx)
         end
+        reaper.ImGui_EndChild(ctx)
 
         reaper.ImGui_SameLine(ctx)
     end
@@ -1971,107 +2241,36 @@ local function draw_main_gui()
             end
 
         elseif left_selection.section == "dev" then
-            fx_list = {}
             local tag = DEVELOPER_LIST[left_selection.index]
-            if tag then
-                for i = 1, #PLUGIN_LIST do
-                    if PLUGIN_LIST[i]:find(tag, 1, true) then
-                        fx_list[#fx_list + 1] = PLUGIN_LIST[i]
+            if developer_fx_cache.plugins ~= PLUGIN_LIST or developer_fx_cache.tag ~= tag then
+                local items = {}
+                if tag then
+                    for i = 1, #PLUGIN_LIST do
+                        if PLUGIN_LIST[i]:find(tag, 1, true) then
+                            items[#items + 1] = PLUGIN_LIST[i]
+                        end
                     end
                 end
+                developer_fx_cache = { plugins = PLUGIN_LIST, tag = tag, items = items }
             end
+            fx_list = developer_fx_cache.items
         end
 
-        -- Build display rows: label (no extension), original name, tooltip (path+extension where applicable)
-        local rows = {}
-        -- Choose base list depending on search scope
+        -- Choose the list shown by this pane; display rows are rebuilt only when
+        -- the source, search text, or duplicate-filter setting changes.
         local base_list = fx_list
         if search_text ~= "" and settings.search_all_folders then
             base_list = PLUGIN_LIST
         end
+        local rows, rows_have_folders = get_display_rows(base_list)
 
-        if base_list and #base_list > 0 then
-            -- Build a map of VST3 base names to filter out VST2 duplicates when enabled
-            local vst3_basenames = {}
-            if settings.hide_vst2_duplicates then
-                for _, name in ipairs(base_list) do
-                    if type(name) == "string" and name:match("^VST3i?%s*:") then
-                        local base = name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
-                        vst3_basenames[base] = true
-                    end
-                end
-            end
-
-            local search_lower = search_text:lower()
-            for _, fx_name in ipairs(base_list) do
-                if type(fx_name) == "table" then
-                    -- Do not include directories when searching; show only as context when no search
-                    if search_text == "" then
-                        rows[#rows + 1] = { label = fx_name.dir and (fx_name.dir .. "/") or "(Folder)", original = nil, tooltip = nil, is_folder = true }
-                    end
-                else
-                    -- Skip VST2 if a VST3 version exists (when enabled)
-                    local skip = false
-                    if settings.hide_vst2_duplicates and fx_name:match("^VSTi?%s*:") then
-                        local base = fx_name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
-                        if vst3_basenames[base] then
-                            skip = true
-                        end
-                    end
-
-                    if not skip then
-                        local label = fx_name
-                        local tooltip = nil
-
-                        -- File-based entries: strip extension for label and compute tooltip with full path
-                        if fx_name:match("%.RfxChain$") or fx_name:match("%.RTrackTemplate$") then
-                            local basename = fx_name:match("([^/\\]+)$") or fx_name
-                            label = basename:gsub("%.[^%.]+$", "")
-                            if fx_name:match("%.RfxChain$") then
-                                tooltip = "FX Chain: " .. (reaper.GetResourcePath() .. "/FXChains/" .. fx_name)
-                            elseif fx_name:match("%.RTrackTemplate$") then
-                                tooltip = "Track Template: " .. (reaper.GetResourcePath() .. "/TrackTemplates/" .. fx_name)
-                            else
-                                tooltip = fx_name
-                            end
-                        else
-                            -- Not a file-based entry: strip plugin type prefixes like "VST3:", "VST:", "JS:", "AU:", etc.
-                            label = label:gsub("^%s*[%w_]+%s*:%s*", "")
-                            tooltip = fx_name
-                        end
-
-                        -- Apply filtering if searching
-                        local include = true
-                        if search_text ~= "" then
-                            include = (label:lower():find(search_lower, 1, true) ~= nil)
-                                or (fx_name:lower():find(search_lower, 1, true) ~= nil)
-                        end
-
-                        if include then
-                            rows[#rows + 1] = { label = label, original = fx_name, tooltip = tooltip }
-                        end
-                    end
-                end
-            end
-
-            -- Sort rows alphabetically by label (case-insensitive), keep folder markers in order
-            table.sort(rows, function(a, b)
-                if a.is_folder ~= b.is_folder then
-                    return (a.is_folder and true) or false
-                end
-                return (a.label or ""):lower() < (b.label or ""):lower()
-            end)
-
+        if #rows > 0 then
             -- Clamp highlighted index
-            if #rows == 0 then
-                highlighted_fx_index = 1
-            else
-                if highlighted_fx_index < 1 then highlighted_fx_index = 1 end
-                if highlighted_fx_index > #rows then highlighted_fx_index = #rows end
-            end
+            if highlighted_fx_index < 1 then highlighted_fx_index = 1 end
+            if highlighted_fx_index > #rows then highlighted_fx_index = #rows end
 
             -- Render rows
-            for idx, row in ipairs(rows) do
+            for_each_visible_row(rows, rows_have_folders, function(idx, row)
                 if row.is_folder then
                     reaper.ImGui_TextDisabled(ctx, row.label)
                 else
@@ -2101,7 +2300,7 @@ local function draw_main_gui()
                         reaper.ImGui_SetTooltip(ctx, row.tooltip)
                     end
                 end
-            end
+            end)
 
             -- Keyboard navigation
             if #rows > 0 then
@@ -2129,8 +2328,8 @@ local function draw_main_gui()
             reaper.ImGui_TextDisabled(ctx, "(No FX to display)")
         end
 
-            reaper.ImGui_EndChild(ctx)
         end
+        reaper.ImGui_EndChild(ctx)
     end
 
     reaper.ImGui_Separator(ctx)
@@ -2277,8 +2476,8 @@ local function draw_settings_window()
             settings_window_open = false
         end
 
-        reaper.ImGui_End(ctx)
     end
+    reaper.ImGui_End(ctx)
     if not open then settings_window_open = false end
 end
 
@@ -2313,12 +2512,7 @@ local function init()
     -- Use parser's caching mechanism
     local fx_list_test, cat_test, dev_list_test = ReadFXFile()
     -- Check multiple watched files' stats and compare with cached stat table to decide rebuild
-    local watched = GetWatchedFiles()
-    local current_stats = {}
-    for key, path in pairs(watched) do
-        local st = GetFileStat(path)
-        if st then current_stats[key] = st end
-    end
+    local current_stats = collect_current_stats()
 
     local saved_stats = ReadStatFile() or {}
 
@@ -2342,17 +2536,13 @@ local function init()
         end
     end
 
-    if need_rebuild then
-        PLUGIN_LIST, CAT, DEVELOPER_LIST = MakeFXFiles()
-        -- Save current combined stats for future comparisons
-        if next(current_stats) then WriteStatFile(current_stats) end
-    else
-        PLUGIN_LIST, CAT, DEVELOPER_LIST = fx_list_test, cat_test, dev_list_test
-        -- Ensure we have a saved stat file; if missing but we have current stats, write it
-        if (not saved_stats or next(saved_stats) == nil) and next(current_stats) then WriteStatFile(current_stats) end
-    end
+    -- Display the last usable cache immediately. A required rebuild runs in
+    -- small coroutine slices from main_loop so other deferred scripts can run.
+    PLUGIN_LIST = type(fx_list_test) == "table" and fx_list_test or {}
+    CAT = type(cat_test) == "table" and cat_test or {}
+    DEVELOPER_LIST = type(dev_list_test) == "table" and dev_list_test or {}
 
-    -- Build cached views for the UI after loading/generating CAT and PLUGIN_LIST
+    -- Build cached views for the UI from the loaded cache.
     BuildViews()
 
     -- Sort developer list alphabetically by display name
@@ -2362,6 +2552,12 @@ local function init()
             local bb = (b and b:match("%((.-)%)") or b or ""):lower()
             return aa < bb
         end)
+    end
+
+    if need_rebuild then
+        start_background_rebuild(current_stats)
+    elseif (not saved_stats or next(saved_stats) == nil) and next(current_stats) then
+        WriteStatFile(current_stats)
     end
 
   -- Restore last selection
@@ -2428,8 +2624,8 @@ local function main_loop()
         local visible = reaper.ImGui_Begin(ctx, "##drag_overlay", false, flags)
         if visible then
             reaper.ImGui_Text(ctx, "Dragging: " .. (drag_label or drag_fx))
-            reaper.ImGui_End(ctx)
         end
+        reaper.ImGui_End(ctx)
 
         -- While dragging, update detected target under mouse for feedback
         do
@@ -2552,6 +2748,8 @@ local function main_loop()
             end
         end
     end
+
+    advance_background_rebuild()
 
     if window_open then
         reaper.defer(main_loop)
