@@ -1,12 +1,12 @@
 --[[
 @description 7R ReaDancer
 @author 7thResonance
-@version 0.2
+@version 0.1
 @provides 
-  [extension win64] UserPlugins\7R Dancer\reaper_7R_ReaDancer.dll > UserPlugins\reaper_7R_ReaDancer.dll
-  [data win64] UserPlugins\7R Dancer\7R ReaDancer\Dance_Large.png > UserPlugins\7R ReaDancer\Dance_Large.png
-  [data win64] UserPlugins\7R Dancer\7R ReaDancer\Dance_Large.txt > UserPlugins\7R ReaDancer\Dance_Large.txt
-  [effect win64] UserPlugins\7R Dancer\7R_ReaDancer_Energy.jsfx  > Effects\7thResonance\7R_ReaDancer_Energy.jsfx
+  [extension win64] reaper_7R_ReaDancer.dll > UserPlugins\reaper_7R_ReaDancer.dll
+  [data win64] 7R Dancer\7R ReaDancer\Dance_Large.png > UserPlugins\7R ReaDancer\Dance_Large.png
+  [data win64] 7R Dancer\7R ReaDancer\Dance_Large.txt > UserPlugins\7R ReaDancer\Dance_Large.txt
+  [effect win64] 7R_ReaDancer_Energy.jsfx  > Effects\7thResonance\7R_ReaDancer_Energy.jsfx
 @about 
   simplified version of FL fruity dancer inspired by peloreaper's extention
     added the following.
