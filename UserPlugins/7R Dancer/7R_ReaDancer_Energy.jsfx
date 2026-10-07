@@ -1,5 +1,6 @@
+@noindex
 desc:7R ReaDancer Energy
-// @version 1.2.0
+// @version 1.0
 // @author 7R ReaDancer
 // @description Multiband audio energy detector for 7R ReaDancer
 // @changelog Reduced the detector to three energy levels
