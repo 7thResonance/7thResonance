@@ -6,7 +6,7 @@
   [extension win64] reaper_7R_ReaDancer.dll > reaper_7R_ReaDancer.dll
   [extension win64] Dance_Large.png > 7R ReaDancer\Dance_Large.png
   [extension win64] Dance_Large.txt > 7R ReaDancer\Dance_Large.txt
-  [effect win64] Effects\7thResonance\7R_ReaDancer_Energy.jsfx  > 7thResonance\7R_ReaDancer_Energy.jsfx
+  [effect win64] 7thResonance\Effects\7R_ReaDancer_Energy.jsfx  > 7thResonance\7R_ReaDancer_Energy.jsfx
 @about 
   simplified version of FL fruity dancer inspired by peloreaper's extention
     added the following.
