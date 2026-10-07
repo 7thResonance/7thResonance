@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="848998be9ffee3318ddd18a46ca2a9253d338711">
+<index version="1" name="7thResonance" commit="fe200e05d4e90c4463a46e50d5548ae124d6e18e">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -26,7 +26,7 @@
       </version>
     </reapack>
   </category>
-  <category name="JSFX">
+  <category name="Effects/7thResonance">
     <reapack name="7R Band Monitor.jsfx" type="effect" desc="7R Band Monitor">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
@@ -37,44 +37,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" author="7thResonance" time="2026-08-22T19:48:17Z">
-        <changelog><![CDATA[- init]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/dafe605abd9cf3ef73e4bca974896f8473cb1f09/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2026-08-24T22:02:58Z">
-        <changelog><![CDATA[- Added mode change smoothing to avoid clicks
-- Companion lua script to engage sum (sum) with a shortcut]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/8f685bc947b23d1bb95b896b05c1f36ff61197d9/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.2" author="7thResonance" time="2026-08-24T22:22:43Z">
-        <changelog><![CDATA[- Added mode change smoothing to avoid clicks
-- Companion lua script to engage sum (mid) with a shortcut]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/6ebea1eb3b90016f9d9d6472ee569f7318d59b56/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2026-08-24T22:36:49Z">
-        <changelog><![CDATA[- Added mode change smoothing to avoid clicks
-- Companion lua script to engage sum (mid) with a shortcut]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/f7cc729507275e173d80762388d4ec6f3c72fbcf/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.4" author="7thResonance" time="2026-08-24T22:54:22Z">
-        <changelog><![CDATA[companion script]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/9377de0379c4fac0480cd52d61512654745099a8/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.5" author="7thResonance" time="2026-08-24T23:19:16Z">
-        <changelog><![CDATA[failed at making this install both files. idk. so install it manualy lmao]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/a34203b97f69c8e098b5a6e124f6703232aa6a76/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.6" author="7thResonance" time="2026-09-29T02:34:27Z">
-        <changelog><![CDATA[changed first crossover frequency]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/47eee44daac37446d3bb7a8131b9a280ddb238a9/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.7" author="7thResonance" time="2026-09-29T10:50:03Z">
-        <changelog><![CDATA[added one more band. can now monitor just the sub extention below 54 hz]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/43d6dd3877dad0ccdd997754a505dfcd89944469/JSFX/7R%20Band%20Monitor.jsfx</source>
-      </version>
-      <version name="1.8" author="7thResonance" time="2026-10-01T17:47:55Z">
+      <version name="1.8" author="7thResonance" time="2026-10-07T23:09:41Z">
         <changelog><![CDATA[fixed mid (sum) not being full band]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/cc02cedf5752ab8042974be83a264b609763c6d0/JSFX/7R%20Band%20Monitor.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Band%20Monitor.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
@@ -87,20 +52,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" author="7thResonance" time="2026-04-20T07:43:49Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/4c5263a09e61fea0bca771434db7359c7093c61c/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2026-04-20T07:47:32Z">
-        <changelog><![CDATA[- changed default size]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/465f66719f0f6d86defe122cb00eb02a6d534ebc/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
-      </version>
-      <version name="1.2" author="7thResonance" time="2026-04-20T08:51:43Z">
-        <changelog><![CDATA[- removed avging to 32 bands]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fa76258ed2ea80383f0baeb7de7851c584b25b60/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2026-04-20T13:47:28Z">
+      <version name="1.3" author="7thResonance" time="2026-10-07T23:09:41Z">
         <changelog><![CDATA[- added left right energy markers (pan visualisation)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/ae3a903e132559b174a00b23a09cce992d17a0bf/JSFX/7R%20Multiband%20Correlometer.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Multiband%20Correlometer.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Oscilloscope.jsfx" type="effect" desc="7R Oscilloscope">
@@ -116,24 +70,12 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" time="2025-09-21T15:31:52Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/7b83a721ff8f0d61020dcc124cb4172daa6ba52f/JSFX/7R%20Oscilloscope.jsfx</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2025-09-28T11:42:10Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/0f41544a7ba0fb230bb6aea5da209629a7f41846/JSFX/7R%20Oscilloscope.jsfx</source>
-      </version>
-      <version name="1.2" author="7thResonance" time="2025-09-28T17:44:05Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/70da7e5348de79e7096527417e1c368099d42d63/JSFX/7R%20Oscilloscope.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2025-09-30T10:07:27Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/ef281c9c052341def2c7029dbd14d2b181fa51ac/JSFX/7R%20Oscilloscope.jsfx</source>
-      </version>
-      <version name="1.4" author="7thResonance" time="2025-09-30T11:40:04Z">
+      <version name="1.4" author="7thResonance" time="2026-10-07T23:09:41Z">
         <changelog><![CDATA[- FFT based pitch detection. a bit better accuracy.
 - reduced the opacity of the filled colour
 - Smoothed the window change.
 - Waveform fade DB adjusted to -60 DB (values below will fade out naturaly without normalising)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/6773239d5c99885f6ea436ac9fe92b9f43a82e5a/JSFX/7R%20Oscilloscope.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Oscilloscope.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Simple K Meter.jsfx" type="effect" desc="7R K Meter">
@@ -146,108 +88,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" author="7thResonance" time="2026-01-07T07:52:21Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/500556e1b9c3ad7ad4f91130f19142bfe4063143/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2026-02-12T17:10:15Z">
-        <changelog><![CDATA[added peak lines]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/842dbfa61eeab36b1080f078b8dccbaeb977c87c/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.2" author="7thResonance" time="2026-02-12T23:21:18Z">
-        <changelog><![CDATA[Added peak hold and decay time sliders.]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/f0f9a9cba157d1e2a7fd1d5144306d3b9a4f86c1/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2026-02-12T23:32:52Z">
-        <changelog><![CDATA[Added value readouts]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/66b9f9f1930c6e50bd3531327dad3eca0516834c/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.4" author="7thResonance" time="2026-02-12T23:36:36Z">
-        <changelog><![CDATA[no runaway value readouts below -120 DB]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/8d04a22b3145141dde5fbc7e8b674d4e87fc7f92/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.5" author="7thResonance" time="2026-02-12T23:39:34Z">
-        <changelog><![CDATA[Text alignment]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/83350444834e98dc66860f7364b9fdd3d3a8fc00/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.6" author="7thResonance" time="2026-02-13T17:24:37Z">
-        <changelog><![CDATA[Added ITU filter]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/e527848d4cd3c6c1cab767f4afa40cfd582c37cd/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.7" author="7thResonance" time="2026-02-14T05:36:34Z">
-        <changelog><![CDATA[Added a bunch of unneccessary stuff, but hey it can show down to -316 DB peaks]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/99aa2758b90dd20f75f5937b566de53c490e5f8a/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.8" author="7thResonance" time="2026-02-18T13:32:09Z">
-        <changelog><![CDATA[Added sliders for range and division for the marking]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/22d33209f4c041691b41733d06b090207244a803/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.9" author="7thResonance" time="2026-02-22T19:53:10Z">
-        <changelog><![CDATA[- Added sliders for colour divison ranges
-- added text readout fade when no audio is palying
-- Peak lines now follow meter colour]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/403a55fab0e792c09f867ae0d6705fa59c27f41a/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.10" author="7thResonance" time="2026-02-23T19:09:22Z">
-        <changelog><![CDATA[- Added Peak/RMS, LUFS S, LUFS M modes
-- Increased Scale Max range]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/c54f6594c738e5ef0c2aa675555f36d6d0ef7db0/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.11" author="7thResonance" time="2026-03-10T15:53:05Z">
-        <changelog><![CDATA[- centered some elements]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/b28bbcc155a276aecb29779a19d002afce8f5b61/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.12" author="7thResonance" time="2026-03-11T06:54:36Z">
-        <changelog><![CDATA[- centered readout values]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/25ef860f4528e5f2383c51ce93d382f25645e3da/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.13" author="7thResonance" time="2026-04-06T02:13:27Z">
-        <changelog><![CDATA[- now numbering also obeys the divison parameter]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/9564b20fac99c7d496771c0ee6cf9e58268d89c4/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.14" author="7thResonance" time="2026-04-06T02:48:27Z">
-        <changelog><![CDATA[- added RMS and Peak hold line switches.]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/87c10dd75c6e406ca761d5d6c4fe5de66e64db64/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.15" author="7thResonance" time="2026-04-06T03:46:19Z">
-        <changelog><![CDATA[- revised metering text.
-- added crest factor/dyanmics metering]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/2b4a58632e42eb092317e7ba833c400bea72cecc/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.16" author="7thResonance" time="2026-04-06T05:25:32Z">
-        <changelog><![CDATA[- revised metering accuracy
-- Added mouse hover value read out]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/28b576ca336f73036cb77f58c6d5fddb87b341ff/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.17" author="7thResonance" time="2026-04-06T05:41:36Z">
-        <changelog><![CDATA[- slowed down crest factor read out value]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/095e14d17f432a47ae9e69f26777dc5eac1cb292/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.18" author="7thResonance" time="2026-04-06T06:47:25Z">
-        <changelog><![CDATA[- moved crest factor read out value]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/a92aace6899cf0e1078a4ab8692ce0f6183564ec/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.19" author="7thResonance" time="2026-04-30T23:38:54Z">
-        <changelog><![CDATA[- added peak over display]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/92586b6b85244a7bf2434df4b6ece8c151d9b335/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.20" author="7thResonance" time="2026-05-08T15:28:53Z">
-        <changelog><![CDATA[- added DR/Loudness Range graph
-- Improved tranport state and drawing behaviour]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/096f93124e9f7dfe270d457ade578c4a05c4ad08/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.21" author="7thResonance" time="2026-05-14T20:12:04Z">
-        <changelog><![CDATA[- Percentile based DR for peak/RMS
-- Improved LUFS DR accuracy]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/6967de1bb5dc08d22ea952d916743e575a5d61e6/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.22" author="7thResonance" time="2026-05-14T21:07:26Z">
-        <changelog><![CDATA[- Moved DR value readout the middle of graph
-- Shadow for ther DR graph.]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/08b260b37c0c5887b4bd2b7d07eb039711004c5c/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
-      </version>
-      <version name="1.23" author="7thResonance" time="2026-05-14T21:11:44Z">
+      <version name="1.23" author="7thResonance" time="2026-10-07T23:09:41Z">
         <changelog><![CDATA[- 0 DB formatting]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/e60c5a6c8d83e11de8c6a642ebb3fef231d5aaaa/JSFX/7R%20Simple%20K%20Meter.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
@@ -265,69 +108,10 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" time="2025-09-24T15:44:18Z">
-        <source>https://github.com/7thResonance/7thResonance/raw/fc237a84a27e0c42c29c75618ec592173a093d86/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.1" author="7thResonance" time="2025-09-30T11:43:06Z">
-        <changelog><![CDATA[Organised Data]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/c09521d1bcfe3c7240c110cb53d4206e031c8302/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.2" author="7thResonance" time="2025-11-17T17:19:46Z">
-        <changelog><![CDATA[added right click menu to enable/disable side channel spectrum
-added ITU-R 468 weighting (usefull for less bass response)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/6e5f7735382ecd14d2171c22958d1e37f48b1450/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.3" author="7thResonance" time="2025-11-18T07:20:24Z">
-        <changelog><![CDATA[added RMS mode]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/b9a20d94a6d26b8cf62372a4c0b606a0ba808e35/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.4" author="7thResonance" time="2025-11-18T10:15:56Z">
-        <changelog><![CDATA[added normalisation mode]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/661900acb675d14df443653d6ee5ddd4727d1f92/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.5" author="7thResonance" time="2026-04-06T02:43:27Z">
-        <changelog><![CDATA[added octave smoothening]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/ab3229751e8457642f681e033fe8c5e01faf5b6d/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.6" author="7thResonance" time="2026-04-06T05:46:44Z">
-        <changelog><![CDATA[normalisation now follows post smoothening]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/b1a1bf50de1600c449231abe6b2110b0edf37bca/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.7" author="7thResonance" time="2026-04-18T08:57:09Z">
-        <changelog><![CDATA[normalise button fix
--  Freeze options
--  Spectrum time averaging
--  Mouse hover value readout]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/a581dd94befa0722ced82eea7e28c24126e0db86/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.8" author="7thResonance" time="2026-04-18T11:21:38Z">
-        <changelog><![CDATA[- spectrum time averaging bug fix
-- 7R weighting mode (beta)
-- Autofreeze on Stop (has a bug will fix on next) ]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/3e4e04aee104cccb6a2dedd0d04130be6ca5cb13/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.9" author="7thResonance" time="2026-04-30T19:07:19Z">
-        <changelog><![CDATA[- spectrum freeze bug fix
-- 7R weighting mode changes (beta)
-- Autofreeze bug fix]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/191ce3cd558ac3185dbc3a17783269de26ea62b8/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.10" author="7thResonance" time="2026-06-03T21:15:35Z">
-        <changelog><![CDATA[- 7R weighting mode changes (beta)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/179bf24458291ab26a2cab67cab3f759ce2c087a/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.11" author="7thResonance" time="2026-06-03T21:40:07Z">
-        <changelog><![CDATA[- Graph proptions adjusted]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/5cce17ae22b0493f028dfada525a3a67bfd1e52f/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.12" author="7thResonance" time="2026-06-26T18:59:58Z">
-        <changelog><![CDATA[- 7R weighting tweak]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/4a5b97d5ff7ee1bd1d40835197eb52b7e34711d6/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
-      </version>
-      <version name="1.13" author="7thResonance" time="2026-09-29T04:32:57Z">
+      <version name="1.13" author="7thResonance" time="2026-10-07T23:09:41Z">
         <changelog><![CDATA[- added ISO226 weighting.
 - Fixed some menu bugs]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/d565ca6381da393ad60a440b22c5ddf2c4822a43/JSFX/7R%20Spectrum%20Analyser.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
   </category>
