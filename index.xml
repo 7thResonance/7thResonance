@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="fe200e05d4e90c4463a46e50d5548ae124d6e18e">
+<index version="1" name="7thResonance" commit="f958103b05ae586fd696e30640b2d6c80a64d955">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -26,7 +26,7 @@
       </version>
     </reapack>
   </category>
-  <category name="Effects/7thResonance">
+  <category name="Effects">
     <reapack name="7R Band Monitor.jsfx" type="effect" desc="7R Band Monitor">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
@@ -37,9 +37,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.8" author="7thResonance" time="2026-10-07T23:09:41Z">
+      <version name="1.8" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[fixed mid (sum) not being full band]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Band%20Monitor.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Band%20Monitor.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
@@ -52,9 +52,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.3" author="7thResonance" time="2026-10-07T23:09:41Z">
+      <version name="1.3" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[- added left right energy markers (pan visualisation)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Multiband%20Correlometer.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Multiband%20Correlometer.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Oscilloscope.jsfx" type="effect" desc="7R Oscilloscope">
@@ -70,12 +70,12 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.4" author="7thResonance" time="2026-10-07T23:09:41Z">
+      <version name="1.4" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[- FFT based pitch detection. a bit better accuracy.
 - reduced the opacity of the filled colour
 - Smoothed the window change.
 - Waveform fade DB adjusted to -60 DB (values below will fade out naturaly without normalising)]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Oscilloscope.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Oscilloscope.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Simple K Meter.jsfx" type="effect" desc="7R K Meter">
@@ -88,9 +88,9 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.23" author="7thResonance" time="2026-10-07T23:09:41Z">
+      <version name="1.23" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[- 0 DB formatting]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Simple%20K%20Meter.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Simple%20K%20Meter.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Spectrum Analyser.jsfx" type="effect" desc="7R Spectrum Analyser">
@@ -108,10 +108,10 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.13" author="7thResonance" time="2026-10-07T23:09:41Z">
+      <version name="1.13" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[- added ISO226 weighting.
 - Fixed some menu bugs]]></changelog>
-        <source>https://github.com/7thResonance/7thResonance/raw/fe200e05d4e90c4463a46e50d5548ae124d6e18e/Effects/7thResonance/7R%20Spectrum%20Analyser.jsfx</source>
+        <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Spectrum%20Analyser.jsfx</source>
       </version>
     </reapack>
   </category>
