@@ -1,7 +1,7 @@
 --[[
 @description 7R FX and Send Realtive Sync
 @author 7thResonance
-@version 0.8.1
+@version 0.9
 @provides 
   [extension win64] reaper_7R_FX_and_Send_Sync.dll > reaper_7R_FX_and_Send_Sync.dll
 @about FX and Send Sync - Activacte by toggle in Action menu. 
