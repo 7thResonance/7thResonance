@@ -1,8 +1,0 @@
---[[
-desc:7R Multiband Correlometer
-author:7thResonance
-version: 1.3
-about: A simple Multiband Correlometer
-        pan visualisation
-@provides [effect] JSFX\7R Multiband Correlometer.jsfx
---]]
