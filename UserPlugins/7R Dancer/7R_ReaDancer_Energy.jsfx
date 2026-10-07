@@ -1,0 +1,160 @@
+desc:7R ReaDancer Energy
+// @version 1.2.0
+// @author 7R ReaDancer
+// @description Multiband audio energy detector for 7R ReaDancer
+// @changelog Reduced the detector to three energy levels
+tags: analysis
+options:gmem=7R_ReaDancer_Energy
+
+slider1:1.00<0,4,0.05>Bass weight
+slider2:1.00<0,4,0.05>Mid weight
+slider3:1.00<0,4,0.05>High weight
+slider4:-48<-72,-12,1>Level 1 threshold (dBFS)
+slider5:-36<-72,-12,1>Level 2 threshold (dBFS)
+slider6:-24<-72,-12,1>Level 3 threshold (dBFS)
+slider7:80<5,1000,5>Attack (ms)
+slider8:350<20,2000,10>Release (ms)
+slider9:0<0,3,1>Live energy output
+
+@init
+  low_l = low_r = mid_l = mid_r = 0;
+  bass_sum = mid_sum = high_sum = 0;
+  sample_count = 0;
+  bass_env = mid_env = high_env = 0;
+  bass_db = mid_db = high_db = weighted_db = -72;
+  energy_level = 0;
+  last_energy_level = -1;
+
+  // Reinitialize analyzer settings saved with the previous five-level layout.
+  legacy_five_level_layout = slider7 < 5 || slider8 < 20 || slider9 > 3 ||
+      (slider7 == 5 && slider8 == 20 && slider9 == 3);
+  legacy_five_level_layout ? (
+    slider7 = 80;
+    slider8 = 350;
+    slider9 = 0;
+    sliderchange(slider7);
+    sliderchange(slider8);
+    sliderchange(slider9);
+  );
+
+@slider
+  low_coeff = 1 - exp(-2 * $pi * 160 / srate);
+  mid_coeff = 1 - exp(-2 * $pi * 2200 / srate);
+
+@block
+  sample_count > 0 ? (
+    block_bass = sqrt(bass_sum / sample_count);
+    block_mid = sqrt(mid_sum / sample_count);
+    block_high = sqrt(high_sum / sample_count);
+
+    attack_coeff = exp(-samplesblock / (srate * max(slider7, 1) * 0.001));
+    release_coeff = exp(-samplesblock / (srate * max(slider8, 1) * 0.001));
+    coeff = block_bass > bass_env ? attack_coeff : release_coeff;
+    bass_env = coeff * bass_env + (1 - coeff) * block_bass;
+    coeff = block_mid > mid_env ? attack_coeff : release_coeff;
+    mid_env = coeff * mid_env + (1 - coeff) * block_mid;
+    coeff = block_high > high_env ? attack_coeff : release_coeff;
+    high_env = coeff * high_env + (1 - coeff) * block_high;
+
+    weight_total = slider1 * slider1 + slider2 * slider2 + slider3 * slider3;
+    weight_total > 0 ? (
+      weighted_rms = sqrt((bass_env * bass_env * slider1 * slider1 +
+                           mid_env * mid_env * slider2 * slider2 +
+                           high_env * high_env * slider3 * slider3) /
+                          weight_total);
+      weighted_db = 20 * log(max(weighted_rms, 0.0000003)) / log(10);
+    ) : (
+      weighted_db = -72;
+    );
+
+    bass_db = 20 * log(max(bass_env, 0.0000003)) / log(10);
+    mid_db = 20 * log(max(mid_env, 0.0000003)) / log(10);
+    high_db = 20 * log(max(high_env, 0.0000003)) / log(10);
+
+    weighted_db >= slider6 ? (
+      energy_level = 3;
+    ) : weighted_db >= slider5 ? (
+      energy_level = 2;
+    ) : weighted_db >= slider4 ? (
+      energy_level = 1;
+    ) : (
+      energy_level = 0;
+    );
+    (energy_level != last_energy_level || slider9 != energy_level) ? (
+      slider9 = energy_level;
+      sliderchange(slider9);
+      last_energy_level = energy_level;
+    );
+
+    bass_sum = mid_sum = high_sum = 0;
+    sample_count = 0;
+  );
+
+@sample
+  low_l += low_coeff * (spl0 - low_l);
+  mid_l += mid_coeff * (spl0 - mid_l);
+  low_r += low_coeff * (spl1 - low_r);
+  mid_r += mid_coeff * (spl1 - mid_r);
+
+  bass_l = low_l;
+  bass_r = low_r;
+  band_mid_l = mid_l - low_l;
+  band_mid_r = mid_r - low_r;
+  band_high_l = spl0 - mid_l;
+  band_high_r = spl1 - mid_r;
+
+  bass_sum += 0.5 * (bass_l * bass_l + bass_r * bass_r);
+  mid_sum += 0.5 * (band_mid_l * band_mid_l + band_mid_r * band_mid_r);
+  high_sum += 0.5 * (band_high_l * band_high_l + band_high_r * band_high_r);
+  sample_count += 1;
+
+@gfx 500 210
+  gfx_set(0.075, 0.085, 0.10, 1);
+  gfx_rect(0, 0, gfx_w, gfx_h, 1);
+  gfx_setfont(1, "Arial", 18);
+  gfx_set(0.94, 0.95, 0.97, 1);
+  gfx_x = 18; gfx_y = 12;
+  gfx_drawstr("7R ReaDancer Energy");
+
+  gfx_setfont(1, "Arial", 13);
+  gfx_set(0.78, 0.81, 0.85, 1);
+  gfx_x = 18; gfx_y = 43; gfx_drawstr("Live band levels");
+
+  gfx_x = 20; gfx_y = 70; gfx_set(0.90, 0.92, 0.96, 1);
+  gfx_drawstr("Bass");
+  gfx_set(0.16, 0.19, 0.23, 1); gfx_rect(96, 68, 280, 18, 1);
+  gfx_set(0.25, 0.66, 0.90, 1);
+  gfx_rect(96, 68, max(0, min(280, (bass_db + 72) * 280 / 72)), 18, 1);
+  gfx_x = 390; gfx_y = 68; gfx_set(0.86, 0.88, 0.91, 1);
+  gfx_drawnumber(bass_db, 1); gfx_drawstr(" dB");
+
+  gfx_x = 20; gfx_y = 101; gfx_set(0.90, 0.92, 0.96, 1);
+  gfx_drawstr("Mids");
+  gfx_set(0.16, 0.19, 0.23, 1); gfx_rect(96, 99, 280, 18, 1);
+  gfx_set(0.32, 0.78, 0.47, 1);
+  gfx_rect(96, 99, max(0, min(280, (mid_db + 72) * 280 / 72)), 18, 1);
+  gfx_x = 390; gfx_y = 99; gfx_set(0.86, 0.88, 0.91, 1);
+  gfx_drawnumber(mid_db, 1); gfx_drawstr(" dB");
+
+  gfx_x = 20; gfx_y = 132; gfx_set(0.90, 0.92, 0.96, 1);
+  gfx_drawstr("Highs");
+  gfx_set(0.16, 0.19, 0.23, 1); gfx_rect(96, 130, 280, 18, 1);
+  gfx_set(0.93, 0.62, 0.26, 1);
+  gfx_rect(96, 130, max(0, min(280, (high_db + 72) * 280 / 72)), 18, 1);
+  gfx_x = 390; gfx_y = 130; gfx_set(0.86, 0.88, 0.91, 1);
+  gfx_drawnumber(high_db, 1); gfx_drawstr(" dB");
+
+  gfx_x = 20; gfx_y = 169; gfx_set(0.90, 0.92, 0.96, 1);
+  gfx_drawstr("Energy");
+  gfx_set(0.16, 0.19, 0.23, 1);
+  gfx_rect(96, 166, 3 * 82, 22, 1);
+  energy_level > 0 ? (
+    gfx_set(0.75, 0.33, 0.88, 1);
+    gfx_rect(96, 166, energy_level * 82 - 4, 22, 1);
+  );
+  gfx_x = 360; gfx_y = 169; gfx_set(0.94, 0.95, 0.97, 1);
+  gfx_drawnumber(energy_level, 0); gfx_drawstr(" / 3");
+  gfx_x = 20; gfx_y = 194; gfx_set(0.78, 0.81, 0.85, 1);
+  gfx_drawstr("Weighted level:");
+  gfx_drawnumber(weighted_db, 1);
+  gfx_drawstr(" dBFS");
