@@ -1,7 +1,7 @@
 --[[
 @description 7R ReaDancer
 @author 7thResonance
-@version 1.6.6
+@version 1.6.7
 @provides 
   [extension win64] reaper_7R_ReaDancer.dll > reaper_7R_ReaDancer.dll
   [extension win64] Dance_Large.png > 7R ReaDancer\Dance_Large.png

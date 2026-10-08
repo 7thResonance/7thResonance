@@ -1,4 +1,3 @@
-@noindex
 Waiting
 Stepping
 Jumping
@@ -9,3 +8,4 @@ Windmill
 Zitabata
 Dervish
 Held
+@noindex
