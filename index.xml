@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="67d1c462f935a7857bb601964a6e93f37afdd66e">
+<index version="1" name="7thResonance" commit="f3f8a0d9cf3fa2d92d9834159584b0a3a94b81fe">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -45,6 +45,11 @@
         <changelog><![CDATA[fixed mid (sum) not being full band]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/67d1c462f935a7857bb601964a6e93f37afdd66e/Effects/7R%20Band%20Monitor.jsfx</source>
         <source type="script" file="7R Band Monitor Toggle.lua">https://github.com/7thResonance/7thResonance/raw/67d1c462f935a7857bb601964a6e93f37afdd66e/Effects/7R%20Band%20Monitor%20Toggle.lua</source>
+      </version>
+      <version name="1.10.1" author="7thResonance" time="2026-10-08T00:14:33Z">
+        <changelog><![CDATA[fixed mid (sum) not being full band]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/f3f8a0d9cf3fa2d92d9834159584b0a3a94b81fe/Effects/7R%20Band%20Monitor.jsfx</source>
+        <source type="script" file="7R Band Monitor Toggle.lua">https://github.com/7thResonance/7thResonance/raw/f3f8a0d9cf3fa2d92d9834159584b0a3a94b81fe/Effects/7R%20Band%20Monitor%20Toggle.lua</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
