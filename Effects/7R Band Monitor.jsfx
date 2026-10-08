@@ -1,9 +1,9 @@
 desc:7R Band Monitor
 author:7thResonance
-version:1.9
+version:1.10.1
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
 changelog: fixed mid (sum) not being full band
-@provides [script] 7R Band Monitor Toggle.lua
+provides: [script] 7R Band Monitor Toggle.lua
 
 
 in_pin:Stereo Input
