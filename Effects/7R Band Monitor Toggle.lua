@@ -1,4 +1,4 @@
-@noindex
+NoIndex: true
 
 --[[
   @description 7R Band Monitor Toggle.lua

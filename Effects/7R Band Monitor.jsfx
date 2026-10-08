@@ -1,8 +1,8 @@
 desc:7R Band Monitor
 author:7thResonance
-version:1.10.2
+version:1.10.3
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
-changelog: fixed mid (sum) not being full band
+changelog: companion script for toggling mid on the master instance
 provides: [script main] 7R Band Monitor Toggle.lua
 
 
