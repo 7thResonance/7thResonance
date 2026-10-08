@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="bd5c2a7dfec9afdf919cdf96942d6104c27f2ca3">
+<index version="1" name="7thResonance" commit="81192c87626020fb2f9e8194a3e40c65dd1bcb65">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -60,6 +60,11 @@
         <changelog><![CDATA[companion script for toggling mid on the master instance]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/bd5c2a7dfec9afdf919cdf96942d6104c27f2ca3/Effects/7R%20Band%20Monitor.jsfx</source>
         <source main="main" type="script" file="7R Band Monitor Toggle.lua">https://github.com/7thResonance/7thResonance/raw/bd5c2a7dfec9afdf919cdf96942d6104c27f2ca3/Effects/7R%20Band%20Monitor%20Toggle.lua</source>
+      </version>
+      <version name="1.10.4" author="7thResonance" time="2026-10-08T00:47:49Z">
+        <changelog><![CDATA[companion script for toggling mid on the master instance]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/81192c87626020fb2f9e8194a3e40c65dd1bcb65/Effects/7R%20Band%20Monitor.jsfx</source>
+        <source main="main" type="script" file="7R Band Monitor Toggle.lua">https://github.com/7thResonance/7thResonance/raw/81192c87626020fb2f9e8194a3e40c65dd1bcb65/Effects/7R%20Band%20Monitor%20Toggle.lua</source>
       </version>
     </reapack>
     <reapack name="7R Multiband Correlometer.jsfx" type="effect" desc="7R Multiband Correlometer">
