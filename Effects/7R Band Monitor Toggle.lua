@@ -1,4 +1,4 @@
-NoIndex: true
+
 
 --[[
   @description 7R Band Monitor Toggle.lua
@@ -8,6 +8,7 @@ NoIndex: true
   @about
     Toggles the 7R Band Monitor JSFX on the Master Track
     between Stereo and Mid monitoring.
+  @noindex
 --]]
 
 local FX_NAME = "7R Band Monitor"
