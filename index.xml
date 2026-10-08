@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="f3f8a0d9cf3fa2d92d9834159584b0a3a94b81fe">
+<index version="1" name="7thResonance" commit="33ebfb134f2312288e7c3e0a280083a364c0e5fe">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -283,6 +283,13 @@
         <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.png">https://github.com/7thResonance/7thResonance/raw/33c1c02ef81cf2329f77fdd78773c90cd7ff93ce/UserPlugins/7R%20Dancer/Dance_Large.png</source>
         <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.txt">https://github.com/7thResonance/7thResonance/raw/33c1c02ef81cf2329f77fdd78773c90cd7ff93ce/UserPlugins/7R%20Dancer/Dance_Large.txt</source>
         <source platform="win64" file="REAPER\Effects\7thResonance\7R_ReaDancer_Energy.jsfx">https://github.com/7thResonance/7thResonance/raw/33c1c02ef81cf2329f77fdd78773c90cd7ff93ce/UserPlugins/7R%20Dancer/7R_ReaDancer_Energy.jsfx</source>
+      </version>
+      <version name="1.6.6" author="7thResonance" time="2026-10-08T00:22:51Z">
+        <changelog><![CDATA[- initial release]]></changelog>
+        <source platform="win64" type="extension" file="reaper_7R_ReaDancer.dll">https://github.com/7thResonance/7thResonance/raw/33ebfb134f2312288e7c3e0a280083a364c0e5fe/UserPlugins/7R%20Dancer/reaper_7R_ReaDancer.dll</source>
+        <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.png">https://github.com/7thResonance/7thResonance/raw/33ebfb134f2312288e7c3e0a280083a364c0e5fe/UserPlugins/7R%20Dancer/Dance_Large.png</source>
+        <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.txt">https://github.com/7thResonance/7thResonance/raw/33ebfb134f2312288e7c3e0a280083a364c0e5fe/UserPlugins/7R%20Dancer/Dance_Large.txt</source>
+        <source platform="win64" type="effect" file="7R_ReaDancer_Energy.jsfx">https://github.com/7thResonance/7thResonance/raw/33ebfb134f2312288e7c3e0a280083a364c0e5fe/UserPlugins/7R%20Dancer/7R_ReaDancer_Energy.jsfx</source>
       </version>
     </reapack>
   </category>
