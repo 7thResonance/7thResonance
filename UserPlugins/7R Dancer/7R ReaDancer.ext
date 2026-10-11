@@ -1,7 +1,7 @@
 --[[
 @description 7R ReaDancer
 @author 7thResonance
-@version 1.6.7
+@version 1.6.8
 @provides 
   [extension win64] reaper_7R_ReaDancer.dll > reaper_7R_ReaDancer.dll
   [extension win64] Dance_Large.png > 7R ReaDancer\Dance_Large.png
@@ -15,5 +15,7 @@
         Accompanied JSFX for the dancer to react to configurable energy level fo the track. (monitoring FX)
         Auto Start
         FL chan is the default (its included, whats the worst thing that could happen?)
-@changelog - initial release
+@changelog 
+    - fixed Z order (doesnt appear above fx or other undocked windows)
+    - disable animation while rendering/freezing
 --]]
