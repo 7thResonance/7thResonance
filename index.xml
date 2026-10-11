@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="2eb2bc187cdb22a0f3d80d3fed44a8671692a7db">
+<index version="1" name="7thResonance" commit="cac783f9637921dde65cda11746e3e97fa2ff2b4">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -317,6 +317,14 @@
         <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.png">https://github.com/7thResonance/7thResonance/raw/2eb2bc187cdb22a0f3d80d3fed44a8671692a7db/UserPlugins/7R%20Dancer/Dance_Large.png</source>
         <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.txt">https://github.com/7thResonance/7thResonance/raw/2eb2bc187cdb22a0f3d80d3fed44a8671692a7db/UserPlugins/7R%20Dancer/Dance_Large.txt</source>
         <source platform="win64" type="effect" file="7R_ReaDancer_Energy.jsfx">https://github.com/7thResonance/7thResonance/raw/2eb2bc187cdb22a0f3d80d3fed44a8671692a7db/UserPlugins/7R%20Dancer/7R_ReaDancer_Energy.jsfx</source>
+      </version>
+      <version name="1.6.8" author="7thResonance" time="2026-10-11T15:33:03Z">
+        <changelog><![CDATA[- fixed Z order (doesnt appear above fx or other undocked windows)
+- disable animation while rendering/freezing]]></changelog>
+        <source platform="win64" type="extension" file="reaper_7R_ReaDancer.dll">https://github.com/7thResonance/7thResonance/raw/cac783f9637921dde65cda11746e3e97fa2ff2b4/UserPlugins/7R%20Dancer/reaper_7R_ReaDancer.dll</source>
+        <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.png">https://github.com/7thResonance/7thResonance/raw/cac783f9637921dde65cda11746e3e97fa2ff2b4/UserPlugins/7R%20Dancer/Dance_Large.png</source>
+        <source platform="win64" type="extension" file="7R ReaDancer\Dance_Large.txt">https://github.com/7thResonance/7thResonance/raw/cac783f9637921dde65cda11746e3e97fa2ff2b4/UserPlugins/7R%20Dancer/Dance_Large.txt</source>
+        <source platform="win64" type="effect" file="7R_ReaDancer_Energy.jsfx">https://github.com/7thResonance/7thResonance/raw/cac783f9637921dde65cda11746e3e97fa2ff2b4/UserPlugins/7R%20Dancer/7R_ReaDancer_Energy.jsfx</source>
       </version>
     </reapack>
   </category>
