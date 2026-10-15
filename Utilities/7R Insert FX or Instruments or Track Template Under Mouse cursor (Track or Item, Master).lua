@@ -1,8 +1,8 @@
 --[[
 @description 7R Insert FX/Instruments/Track Template Under Mouse cursor (Track or Item, Master)
 @author 7thResonance
-@version 3.10
-@changelog - improved performance of plugin list building, caching and GUI
+@version 3.11
+@changelog - added option to hide developers with no FX detected
 @about Opens GUI for track, item or master under cursor with GUI to select FX
     - Saves position and size of GUI
     - Cache for quick search. Updates when new plugins are installed
@@ -45,9 +45,11 @@ local LV2_INFO, LV2, LV2i              = {}, {}, {}
 local FX_ID_INDEX                       = {}
 local background_build_active = false
 local background_build_units = 0
+local background_build_fast = false
 
 local function BuildCheckpoint()
-    if not background_build_active then return end
+    -- Startup scans and manual refreshes run without yielding when fast is enabled.
+    if not background_build_active or background_build_fast then return end
     background_build_units = background_build_units + 1
     -- Keep each rebuild slice short enough to let other deferred scripts run.
     if background_build_units >= 64 then
@@ -55,9 +57,6 @@ local function BuildCheckpoint()
         coroutine.yield()
     end
 end
-
--- Feature flags
-local ENABLE_FX_CHAINS = false -- set to true to enable FX Chains in the UI
 
 local function ResetTables()
     CAT = {}
@@ -666,8 +665,6 @@ local function ParseFavorites()
                 elseif fx_type == "1048576" then -- SMART FOLDER
                     CAT[#CAT].list[#CAT[#CAT].list].smart = true
                     CAT[#CAT].list[#CAT[#CAT].list].fx = ParseSmartFolder(item)
-                elseif fx_type == "1000" then -- FX CHAIN
-                    table.insert(CAT[#CAT].list[#CAT[#CAT].list].fx, item .. ".RfxChain")
                 end
                 if fx_found then
                     table.insert(CAT[#CAT].list[#CAT[#CAT].list].fx, fx_found)
@@ -704,13 +701,6 @@ local function ParseFavorites()
             end
         end
     end
-end
-
-local function ParseFXChains()
-    local fxChainsFolder = r.GetResourcePath() .. "/FXChains"
-    local FX_CHAINS = {}
-    GetDirFilesRecursive(fxChainsFolder, FX_CHAINS, ".RfxChain")
-    return FX_CHAINS
 end
 
 local function ParseTrackTemplates()
@@ -803,7 +793,7 @@ local function FlattenCatCategoryToList(cat_name)
 end
 
 -- Cached views for two-pane mode (built from canonical data)
-local views = { all = {}, fxchains = {}, tracktemplates = {}, instruments = {} }
+local views = { all = {}, tracktemplates = {}, instruments = {} }
 
 local function BuildViews()
     -- All plugins (flat)
@@ -811,13 +801,6 @@ local function BuildViews()
     for _, v in ipairs(PLUGIN_LIST or {}) do
         BuildCheckpoint()
         table.insert(views.all, v)
-    end
-
-    -- FX Chains
-    if ENABLE_FX_CHAINS then
-        views.fxchains = FlattenCatCategoryToList("FX CHAINS") or {}
-    else
-        views.fxchains = {}
     end
 
     -- Track Templates
@@ -841,7 +824,6 @@ local function BuildViews()
         return out
     end
     views.all = dedupe(views.all)
-    views.fxchains = dedupe(views.fxchains)
     views.tracktemplates = dedupe(views.tracktemplates)
     views.instruments = dedupe(views.instruments)
     -- Sort views deterministically (case-insensitive)
@@ -849,7 +831,6 @@ local function BuildViews()
         table.sort(tbl, function(a,b) return (tostring(a):lower() < tostring(b):lower()) end)
     end
     sort_ci(views.all)
-    sort_ci(views.fxchains)
     sort_ci(views.tracktemplates)
     sort_ci(views.instruments)
 
@@ -889,8 +870,7 @@ local function AllPluginsCategory()
 
     for i = 1, #CAT do
         BuildCheckpoint()
-        local is_fxchains = (CAT[i].name == "FX CHAINS")
-        if CAT[i].name ~= "FOLDERS" and (not is_fxchains or ENABLE_FX_CHAINS) and CAT[i].name ~= "TRACK TEMPLATES" then
+        if CAT[i].name ~= "FOLDERS" and CAT[i].name ~= "TRACK TEMPLATES" then
             table.sort(CAT[i].list,
                 function(a, b) if a.name and b.name then return a.name:lower() < b.name:lower() end end)
         end
@@ -923,39 +903,7 @@ function GenerateFxList()
     ParseFXTags() -- CATEGORIES
     ParseCustomCategories()
     ParseFavorites()
-    -- FX Chains and Track Templates are discovered by parser; enable Track Templates category
-    if ENABLE_FX_CHAINS then
-        local FX_CHAINS = ParseFXChains()
-        if FX_CHAINS and #FX_CHAINS ~= 0 then
-            local converted_chains = ConvertFileTreeToCATList(FX_CHAINS, ".RfxChain")
-            -- Wrap top-level strings into a default folder entry so the renderer sees entries with name/fx
-            local fc_list = {}
-            for _, v in ipairs(converted_chains) do
-                BuildCheckpoint()
-                if type(v) == "table" then
-                    table.insert(fc_list, v)
-                else
-                    if #fc_list == 0 or type(fc_list[#fc_list]) ~= "table" then
-                        table.insert(fc_list, { name = "FX Chains", fx = {} })
-                    end
-                    table.insert(fc_list[#fc_list].fx, v)
-                end
-            end
-            -- If the converter produced a single default wrapper folder ("FX Chains"), flatten it
-            if #fc_list == 1 and type(fc_list[1]) == "table" and fc_list[1].name == "FX Chains" then
-                local wrapper = fc_list[1]
-                if wrapper.fx and #wrapper.fx > 0 and type(wrapper.fx[1]) == "string" then
-                    -- Files only: render them directly under the main node
-                    CAT[#CAT + 1] = { name = "FX CHAINS", list = { { name = "FX Chains", fx = wrapper.fx, direct = true } } }
-                else
-                    -- Folder children: place them directly under the main node
-                    CAT[#CAT + 1] = { name = "FX CHAINS", list = wrapper.fx }
-                end
-            else
-                CAT[#CAT + 1] = { name = "FX CHAINS", list = fc_list }
-            end
-        end
-    end
+    -- Track Templates are discovered from their resource folder.
     local TRACK_TEMPLATES = ParseTrackTemplates()
     if TRACK_TEMPLATES and #TRACK_TEMPLATES ~= 0 then
         -- Convert parser nested structure into CAT-style folder list
@@ -1035,29 +983,11 @@ function GetFXTbl()
     return GenerateFxList(), CAT, DEVELOPER_LIST
 end
 
-function UpdateChainsTrackTemplates(cat_tbl)
+function UpdateTrackTemplates(cat_tbl)
     if not cat_tbl then return end
-    local FX_CHAINS = ParseFXChains()
     local TRACK_TEMPLATES = ParseTrackTemplates()
-    local chain_found, template_found
+    local template_found
     for i = 1, #cat_tbl do
-        if cat_tbl[i].name == "FX CHAINS" then
-            -- Convert parser nested structure into CAT-style folder list (wrap top-level file strings)
-            local converted_chains = ConvertFileTreeToCATList(FX_CHAINS, ".RfxChain")
-            local fc_list = {}
-            for _, v in ipairs(converted_chains) do
-                if type(v) == "table" then
-                    table.insert(fc_list, v)
-                else
-                    if #fc_list == 0 or type(fc_list[#fc_list]) ~= "table" then
-                        table.insert(fc_list, { name = "FX Chains", fx = {} })
-                    end
-                    table.insert(fc_list[#fc_list].fx, v)
-                end
-            end
-            cat_tbl[i].list = fc_list
-            chain_found = true
-        end
         if cat_tbl[i].name == "TRACK TEMPLATES" then
             -- Convert to CAT-style nested entries and set (wrap top-level strings)
             local converted = ConvertTrackTemplatesToCATList(TRACK_TEMPLATES)
@@ -1074,30 +1004,6 @@ function UpdateChainsTrackTemplates(cat_tbl)
             end
             cat_tbl[i].list = tt_list
             template_found = true
-        end
-    end
-    if not chain_found then
-        local converted_chains = ConvertFileTreeToCATList(FX_CHAINS, ".RfxChain")
-        local fc_list = {}
-        for _, v in ipairs(converted_chains) do
-            if type(v) == "table" then
-                table.insert(fc_list, v)
-            else
-                if #fc_list == 0 or type(fc_list[#fc_list]) ~= "table" then
-                    table.insert(fc_list, { name = "FX Chains", fx = {} })
-                end
-                table.insert(fc_list[#fc_list].fx, v)
-            end
-        end
-        if #fc_list == 1 and type(fc_list[1]) == "table" and fc_list[1].name == "FX Chains" then
-            local wrapper = fc_list[1]
-            if wrapper.fx and #wrapper.fx > 0 and type(wrapper.fx[1]) == "string" then
-                cat_tbl[#cat_tbl + 1] = { name = "FX CHAINS", list = { { name = "FX Chains", fx = wrapper.fx, direct = true } } }
-            else
-                cat_tbl[#cat_tbl + 1] = { name = "FX CHAINS", list = wrapper.fx }
-            end
-        else
-            cat_tbl[#cat_tbl + 1] = { name = "FX CHAINS", list = fc_list }
         end
     end
     if not template_found then
@@ -1136,7 +1042,7 @@ function UpdateChainsTrackTemplates(cat_tbl)
             end
         end
     end
-    -- Rebuild cached views whenever chains/templates are updated
+    -- Rebuild cached views whenever templates are updated
     BuildViews()
 end
 
@@ -1227,6 +1133,7 @@ local left_selection = { section = "all", index = 0 }
 local settings_window_open = false
 local background_rebuild = nil
 local developer_fx_cache = { plugins = nil, tag = nil, items = {} }
+local developer_visibility_cache = { plugins = nil, developers = nil, hide_duplicates = nil, visible = {} }
 local display_rows_cache = { list = nil, search = nil, hide_duplicates = nil, rows = {}, has_folders = false }
 
 -- Search and keyboard navigation
@@ -1269,6 +1176,7 @@ local target_info = ""
 settings = settings or {}
 settings.auto_close_on_insert = settings.auto_close_on_insert ~= nil and settings.auto_close_on_insert or true
 settings.hide_vst2_duplicates = settings.hide_vst2_duplicates ~= nil and settings.hide_vst2_duplicates or true   -- Hide VST2 if VST3 version exists
+if settings.hide_empty_developers == nil then settings.hide_empty_developers = true end
 settings.search_all_folders   = settings.search_all_folders   ~= nil and settings.search_all_folders   or false  -- Placeholder for future search behavior
 settings.fx_window_mode       = settings.fx_window_mode       ~= nil and settings.fx_window_mode       or 1      -- 0 = No window, 1 = FX window (float), 2 = Chain window
 settings.last_left_section    = settings.last_left_section    ~= nil and settings.last_left_section    or "all"  -- "all" | "folder" | "dev"
@@ -1295,6 +1203,7 @@ local function save_settings()
     f:write("-- FX Inserter Settings (Self-Contained Parser Edition)\n")
     f:write("return {\n")
     f:write("  hide_vst2_duplicates = " .. tostring(settings.hide_vst2_duplicates) .. ",\n")
+    f:write("  hide_empty_developers = " .. tostring(settings.hide_empty_developers) .. ",\n")
     f:write("  auto_close_on_insert = " .. tostring(settings.auto_close_on_insert) .. ",\n")
     f:write("  search_all_folders = " .. tostring(settings.search_all_folders) .. ",\n")
     f:write("  fx_window_mode = " .. tostring(settings.fx_window_mode) .. ",\n")
@@ -1329,6 +1238,7 @@ local function load_settings()
   local ok, tbl = pcall(loader(content))
   if ok and type(tbl) == "table" then
     if tbl.hide_vst2_duplicates ~= nil then settings.hide_vst2_duplicates = tbl.hide_vst2_duplicates end
+    if tbl.hide_empty_developers ~= nil then settings.hide_empty_developers = tbl.hide_empty_developers end
     if tbl.auto_close_on_insert ~= nil then settings.auto_close_on_insert = tbl.auto_close_on_insert end
     if tbl.search_all_folders ~= nil then settings.search_all_folders = tbl.search_all_folders end
     if tbl.fx_window_mode ~= nil then settings.fx_window_mode = tbl.fx_window_mode end
@@ -1342,6 +1252,56 @@ local function load_settings()
             if tbl.last_search_text ~= nil then settings.last_search_text = tbl.last_search_text end
             if tbl.expanded_nodes ~= nil and type(tbl.expanded_nodes) == 'table' then settings.expanded_nodes = tbl.expanded_nodes end
   end
+end
+
+local function get_developer_visibility()
+    local hide_duplicates = settings.hide_vst2_duplicates
+    if developer_visibility_cache.plugins == PLUGIN_LIST
+        and developer_visibility_cache.developers == DEVELOPER_LIST
+        and developer_visibility_cache.hide_duplicates == hide_duplicates then
+        return developer_visibility_cache.visible
+    end
+
+    local visible = {}
+    for _, tag in ipairs(DEVELOPER_LIST or {}) do
+        local developer_fx = {}
+        for _, fx_name in ipairs(PLUGIN_LIST or {}) do
+            if type(fx_name) == "string" and fx_name:find(tag, 1, true) then
+                developer_fx[#developer_fx + 1] = fx_name
+            end
+        end
+
+        local vst3_basenames = {}
+        if hide_duplicates then
+            for _, fx_name in ipairs(developer_fx) do
+                if fx_name:match("^VST3i?%s*:") then
+                    local base = fx_name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
+                    vst3_basenames[base] = true
+                end
+            end
+        end
+
+        visible[tag] = false
+        for _, fx_name in ipairs(developer_fx) do
+            local hidden_duplicate = hide_duplicates and fx_name:match("^VSTi?%s*:") ~= nil
+            if hidden_duplicate then
+                local base = fx_name:gsub("^%s*[%w_]+%s*:%s*", ""):lower()
+                hidden_duplicate = vst3_basenames[base] == true
+            end
+            if not hidden_duplicate then
+                visible[tag] = true
+                break
+            end
+        end
+    end
+
+    developer_visibility_cache = {
+        plugins = PLUGIN_LIST,
+        developers = DEVELOPER_LIST,
+        hide_duplicates = hide_duplicates,
+        visible = visible,
+    }
+    return visible
 end
 
 local function capture_fx_state()
@@ -1374,14 +1334,14 @@ local function collect_current_stats()
     return current_stats
 end
 
-local function start_background_rebuild(current_stats)
+local function start_background_rebuild(current_stats, fast)
     if background_rebuild then return false end
 
     local base_state = capture_fx_state()
     local thread = coroutine.create(function()
         background_build_active = true
         background_build_units = 0
-        views = { all = {}, fxchains = {}, tracktemplates = {}, instruments = {} }
+        views = { all = {}, tracktemplates = {}, instruments = {} }
         PLUGIN_LIST, CAT, DEVELOPER_LIST = MakeFXFiles()
         BuildViews()
         if DEVELOPER_LIST and #DEVELOPER_LIST > 1 then
@@ -1399,6 +1359,7 @@ local function start_background_rebuild(current_stats)
         base_state = base_state,
         work_state = nil,
         stats = current_stats,
+        fast = fast == true,
     }
     return true
 end
@@ -1408,7 +1369,9 @@ local function advance_background_rebuild()
     if not job then return end
 
     restore_fx_state(job.work_state or job.base_state)
+    background_build_fast = job.fast == true
     local ok, err = coroutine.resume(job.thread)
+    background_build_fast = false
     job.work_state = capture_fx_state()
 
     if not ok then
@@ -1469,14 +1432,10 @@ local function get_display_rows(base_list)
                 if not skip then
                     local label = fx_name
                     local tooltip
-                    if fx_name:match("%.RfxChain$") or fx_name:match("%.RTrackTemplate$") then
+                    if fx_name:match("%.RTrackTemplate$") then
                         local basename = fx_name:match("([^/\\]+)$") or fx_name
                         label = basename:gsub("%.[^%.]+$", "")
-                        if fx_name:match("%.RfxChain$") then
-                            tooltip = "FX Chain: " .. (reaper.GetResourcePath() .. "/FXChains/" .. fx_name)
-                        else
-                            tooltip = "Track Template: " .. (reaper.GetResourcePath() .. "/TrackTemplates/" .. fx_name)
-                        end
+                        tooltip = "Track Template: " .. (reaper.GetResourcePath() .. "/TrackTemplates/" .. fx_name)
                     else
                         label = label:gsub("^%s*[%w_]+%s*:%s*", "")
                         tooltip = fx_name
@@ -1651,18 +1610,8 @@ local function insert_fx(fx_name)
 
 
     local fx_to_add = fx_name
-    -- Handle FX Chains and Track Templates paths
-    if fx_name:match("%.RfxChain$") then
-        -- Build full path to the FX chain in the resource FXChains folder and normalize separators
-        local rp = reaper.GetResourcePath() or ""
-        local chain_path = rp .. os_separator .. 'FXChains' .. os_separator .. fx_name
-        chain_path = chain_path:gsub("[/\\]", os_separator)
-        if not reaper.file_exists(chain_path) then
-            reaper.ShowMessageBox("FX Chain not found:\n" .. chain_path, "Error reading FX chain file", 0)
-            return false
-        end
-        fx_to_add = chain_path
-    elseif fx_name:match("%.RTrackTemplate$") then
+    -- Handle Track Template paths
+    if fx_name:match("%.RTrackTemplate$") then
         -- Try REAPER resource TrackTemplates first
         local res_path = reaper.GetResourcePath() .. '/TrackTemplates/' .. fx_name
         local template_path = nil
@@ -1740,10 +1689,10 @@ local function insert_fx(fx_name)
             local display = fx_name:gsub("^%s*[%w_]+%s*:%s*", "")
             reaper.GetSetMediaTrackInfo_String(new_tr, "P_NAME", display, true)
             reaper.SetMediaTrackInfo_Value(new_tr, "I_RECARM", 1)
-            -- Decide instantiate mode: use instantiate=true only for file-based entries (chains/templates or explicit paths)
+            -- Use instantiate=true only for file-based entries (templates or explicit paths)
             local function is_file_entry(s)
                 if type(s) ~= 'string' then return false end
-                if s:match("%.RfxChain$") or s:match("%.RTrackTemplate$") then return true end
+                if s:match("%.RTrackTemplate$") then return true end
                 if s:find(os_separator, 1, true) then return true end
                 return false
             end
@@ -1806,7 +1755,7 @@ local function insert_fx(fx_name)
             if target.type == "track" then
                 local function is_file_entry(s)
                     if type(s) ~= 'string' then return false end
-                    if s:match("%.RfxChain$") or s:match("%.RTrackTemplate$") then return true end
+                    if s:match("%.RTrackTemplate$") then return true end
                     if s:find(os_separator, 1, true) then return true end
                     return false
                 end
@@ -1831,13 +1780,6 @@ local function insert_fx(fx_name)
         if success_count > 0 then
             return true
         end
-    end
-    -- If insertion failed and it was an FX chain, show diagnostic info
-    if fx_name and type(fx_name) == 'string' and fx_name:match("%.RfxChain$") then
-        local rp = reaper.GetResourcePath() or ""
-        local attempted = (fx_to_add or fx_name)
-        local exists = reaper.file_exists(attempted) and "yes" or "no"
-        reaper.ShowMessageBox("Failed to insert FX chain:\n" .. tostring(attempted) .. "\nFile exists: " .. exists .. "\n\nIf the file exists, try dropping directly onto a track or report your REAPER version.", "FX chain insertion failed", 0)
     end
     return false
 end
@@ -1946,11 +1888,11 @@ local function draw_main_gui_tree_contents()
                                                                                                 reaper.ImGui_TreePop(ctx)
                                                                                             end
                                     elseif type(fx) == "string" then
-                                    local is_file_entry = fx:match("%.RfxChain$") or fx:match("%.RTrackTemplate$")
+                                    local is_file_entry = fx:match("%.RTrackTemplate$")
                                     local display = fx
                                     if is_file_entry then
                                         local basename = fx:match("([^/\\]+)$") or fx
-                                        display = basename:gsub("%.RfxChain$", ""):gsub("%.RTrackTemplate$", "")
+                                        display = basename:gsub("%.RTrackTemplate$", "")
                                     else
                                         display = display:gsub("^%s*[%w_]+%s*:%s*", "")
                                     end
@@ -2000,11 +1942,11 @@ local function draw_main_gui_tree_contents()
                                                             reaper.ImGui_TreePop(ctx)
                                                         end
                                                     elseif type(fx) == "string" then
-                                                        local is_file_entry = fx:match("%.RfxChain$") or fx:match("%.RTrackTemplate$")
+                                                        local is_file_entry = fx:match("%.RTrackTemplate$")
                                                         local display = fx
                                                         if is_file_entry then
                                                             local basename = fx:match("([^/\\]+)$") or fx
-                                                            display = basename:gsub("%.RfxChain$", ""):gsub("%.RTrackTemplate$", "")
+                                                            display = basename:gsub("%.RTrackTemplate$", "")
                                                         else
                                                             display = display:gsub("^%s*[%w_]+%s*:%s*", "")
                                                         end
@@ -2100,7 +2042,7 @@ local function draw_main_gui()
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, background_rebuild and "Working..." or "Refresh", 80, 0) then
         if not background_rebuild then
-            start_background_rebuild(collect_current_stats())
+            start_background_rebuild(collect_current_stats(), true)
         end
     end
     reaper.ImGui_SameLine(ctx)
@@ -2110,6 +2052,14 @@ local function draw_main_gui()
     reaper.ImGui_Separator(ctx)
 
     local left_width = math.floor(reaper.ImGui_GetWindowWidth(ctx) * 0.33)
+    local developer_visibility = get_developer_visibility()
+    if settings.hide_empty_developers and left_selection.section == "dev" then
+        local selected_dev = DEVELOPER_LIST[left_selection.index]
+        if not selected_dev or not developer_visibility[selected_dev] then
+            left_selection.section = "all"
+            left_selection.index = 0
+        end
+    end
 
     -- LEFT PANE (hidden when single-pane tree view is enabled)
     if not settings.use_tree_view then
@@ -2150,18 +2100,6 @@ local function draw_main_gui()
             left_selection.index = 0
         end
 
-        -- FX Chains (hidden unless enabled)
-        if ENABLE_FX_CHAINS then
-            local fxchains_selected = (left_selection.section == "fxchains")
-            if reaper.ImGui_Selectable(ctx, "FX CHAINS##LEFT", fxchains_selected) then
-                left_selection.section = "fxchains"
-                left_selection.index = 0
-                settings.last_left_section = "fxchains"
-                settings.last_left_value = ""
-                save_settings()
-            end
-        end
-
         -- Track Templates
         local ttemplates_selected = (left_selection.section == "tracktemplates")
         if reaper.ImGui_Selectable(ctx, "TRACK TEMPLATES##LEFT", ttemplates_selected) then
@@ -2182,26 +2120,38 @@ local function draw_main_gui()
             save_settings()
         end
 
-        reaper.ImGui_Separator(ctx)
-
         -- Developers
-    if bold_font then reaper.ImGui_PushFont(ctx, bold_font, settings.font_size) end
-        reaper.ImGui_Text(ctx, "Developers")
-        if bold_font then reaper.ImGui_PopFont(ctx) end
-        if #DEVELOPER_LIST > 0 then
-            for i, dev in ipairs(DEVELOPER_LIST) do
-                local dev_name = dev:match("%((.-)%)") or dev
-                local selected = (left_selection.section == "dev" and left_selection.index == i)
-                        if reaper.ImGui_Selectable(ctx, dev_name .. "##DEV" .. i, selected) then
-                    left_selection.section = "dev"
-                    left_selection.index = i
-                    settings.last_left_section = "dev"
-                    settings.last_left_value = dev_name
-                    save_settings()
+        local show_developer_section = settings.hide_empty_developers ~= true
+        if settings.hide_empty_developers then
+            for _, dev in ipairs(DEVELOPER_LIST) do
+                if developer_visibility[dev] then
+                    show_developer_section = true
+                    break
                 end
             end
-        else
-            reaper.ImGui_TextDisabled(ctx, "(No developers)")
+        end
+        if show_developer_section then
+            reaper.ImGui_Separator(ctx)
+            if bold_font then reaper.ImGui_PushFont(ctx, bold_font, settings.font_size) end
+            reaper.ImGui_Text(ctx, "Developers")
+            if bold_font then reaper.ImGui_PopFont(ctx) end
+            if #DEVELOPER_LIST > 0 then
+                for i, dev in ipairs(DEVELOPER_LIST) do
+                    if not settings.hide_empty_developers or developer_visibility[dev] then
+                        local dev_name = dev:match("%((.-)%)") or dev
+                        local selected = (left_selection.section == "dev" and left_selection.index == i)
+                        if reaper.ImGui_Selectable(ctx, dev_name .. "##DEV" .. i, selected) then
+                            left_selection.section = "dev"
+                            left_selection.index = i
+                            settings.last_left_section = "dev"
+                            settings.last_left_value = dev_name
+                            save_settings()
+                        end
+                    end
+                end
+            else
+                reaper.ImGui_TextDisabled(ctx, "(No developers)")
+            end
         end
 
         end
@@ -2218,9 +2168,6 @@ local function draw_main_gui()
         local fx_list = nil
         if left_selection.section == "all" then
             fx_list = PLUGIN_LIST
-
-        elseif left_selection.section == "fxchains" then
-            fx_list = views.fxchains
 
         elseif left_selection.section == "tracktemplates" then
             fx_list = views.tracktemplates
@@ -2364,6 +2311,17 @@ local function draw_settings_window()
         end
         if reaper.ImGui_IsItemHovered(ctx) then
             reaper.ImGui_SetTooltip(ctx, "When enabled, VST2 plugins are hidden if a VST3 version of the same plugin exists")
+        end
+
+        reaper.ImGui_Spacing(ctx)
+
+        local changed_empty_devs, new_hide_empty_devs = reaper.ImGui_Checkbox(ctx, "Hide developers with no FX", settings.hide_empty_developers)
+        if changed_empty_devs then
+            settings.hide_empty_developers = new_hide_empty_devs
+            save_settings()
+        end
+        if reaper.ImGui_IsItemHovered(ctx) then
+            reaper.ImGui_SetTooltip(ctx, "Hide developer entries that have no visible FX in the plugin list")
         end
 
         reaper.ImGui_Spacing(ctx)
@@ -2536,8 +2494,47 @@ local function init()
         end
     end
 
-    -- Display the last usable cache immediately. A required rebuild runs in
-    -- small coroutine slices from main_loop so other deferred scripts can run.
+    -- Strip entries written by older versions that cached saved FX chains.
+    local function strip_legacy_chain_files(entries)
+        if type(entries) ~= "table" then return false end
+        local removed = false
+        for i = #entries, 1, -1 do
+            local entry = entries[i]
+            if type(entry) == "string" then
+                if entry:lower():match("%.rfxchain$") then
+                    table.remove(entries, i)
+                    removed = true
+                end
+            elseif type(entry) == "table" then
+                if type(entry.fx) == "table" then
+                    if strip_legacy_chain_files(entry.fx) then removed = true end
+                else
+                    if strip_legacy_chain_files(entry) then removed = true end
+                end
+            end
+        end
+        return removed
+    end
+
+    local had_legacy_chain_cache = false
+    if type(fx_list_test) == "table" and strip_legacy_chain_files(fx_list_test) then
+        had_legacy_chain_cache = true
+    end
+    if type(cat_test) == "table" then
+        for i = #cat_test, 1, -1 do
+            local category = cat_test[i]
+            if type(category) == "table" and category.name == "FX CHAINS" then
+                table.remove(cat_test, i)
+                had_legacy_chain_cache = true
+            elseif type(category) == "table" and strip_legacy_chain_files(category.list) then
+                had_legacy_chain_cache = true
+            end
+        end
+    end
+    if had_legacy_chain_cache then need_rebuild = true end
+
+    -- Display the last usable cache immediately. A required startup rebuild
+    -- runs in one pass when the main loop advances it.
     PLUGIN_LIST = type(fx_list_test) == "table" and fx_list_test or {}
     CAT = type(cat_test) == "table" and cat_test or {}
     DEVELOPER_LIST = type(dev_list_test) == "table" and dev_list_test or {}
@@ -2555,7 +2552,7 @@ local function init()
     end
 
     if need_rebuild then
-        start_background_rebuild(current_stats)
+        start_background_rebuild(current_stats, true)
     elseif (not saved_stats or next(saved_stats) == nil) and next(current_stats) then
         WriteStatFile(current_stats)
     end
@@ -2589,10 +2586,8 @@ local function init()
           end
       end
   else
-      -- Support persisted choices for fxchains/tracktemplates/instruments
-      if settings.last_left_section == "fxchains" and ENABLE_FX_CHAINS then
-          left_selection.section = "fxchains"
-      elseif settings.last_left_section == "tracktemplates" then
+      -- Support persisted choices for track templates and instruments
+      if settings.last_left_section == "tracktemplates" then
           left_selection.section = "tracktemplates"
       elseif settings.last_left_section == "instruments" then
           left_selection.section = "instruments"
@@ -2702,30 +2697,13 @@ local function main_loop()
 
             if drag_fx then
                 if insert_mode ~= "none" then
-                    insert_fx(drag_fx)
-                    if settings.auto_close_on_insert then window_open = false end
+                    local inserted = insert_fx(drag_fx)
+                    if inserted and settings.auto_close_on_insert then window_open = false end
                 else
-                    -- If not over a visible target allow creating a new track for instruments, track templates, or FX chains
+                    -- If not over a visible target allow creating a new track for instruments or track templates
                     if is_instrument_name(drag_fx) or tostring(drag_fx):match("%.RTrackTemplate$") then
-                        insert_fx(drag_fx)
-                        if settings.auto_close_on_insert then window_open = false end
-                    elseif tostring(drag_fx):match("%.RfxChain$") then
-                        -- Create a new track (respect folders when possible) and insert the FX chain
-                        local new_tr = nil
-                        if insert_track_respect_folders then new_tr = insert_track_respect_folders() end
-                        if not new_tr then
-                            local insert_idx = reaper.CountTracks(0)
-                            reaper.InsertTrackAtIndex(insert_idx, true)
-                            reaper.TrackList_AdjustWindows(false)
-                            new_tr = reaper.GetTrack(0, insert_idx)
-                        end
-                        if new_tr then
-                            target_track = new_tr
-                            target_item = nil
-                            insert_mode = "track"
-                            insert_fx(drag_fx)
-                            if settings.auto_close_on_insert then window_open = false end
-                        end
+                        local inserted = insert_fx(drag_fx)
+                        if inserted and settings.auto_close_on_insert then window_open = false end
                     end
                 end
             end
