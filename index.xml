@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="7thResonance" commit="cac783f9637921dde65cda11746e3e97fa2ff2b4">
+<index version="1" name="7thResonance" commit="c6f4ca582025f1bebe965fe891a527db92b2183f">
   <category name="Editing">
     <reapack name="7R Untrim Item to source Length (until other item edge).lua" type="script" desc="7R Untrim Item to source Length (until other item edge)">
       <metadata>
@@ -85,6 +85,12 @@
       <version name="1.3" author="7thResonance" time="2026-10-07T23:14:14Z">
         <changelog><![CDATA[- added left right energy markers (pan visualisation)]]></changelog>
         <source>https://github.com/7thResonance/7thResonance/raw/f958103b05ae586fd696e30640b2d6c80a64d955/Effects/7R%20Multiband%20Correlometer.jsfx</source>
+      </version>
+      <version name="1.4" author="7thResonance" time="2026-10-15T04:30:13Z">
+        <changelog><![CDATA[- added multirate FFT (lower frequencies have more accuracy)
+- added avg time
+- added audio range (analyses this range from the loudest signal) ]]></changelog>
+        <source>https://github.com/7thResonance/7thResonance/raw/c6f4ca582025f1bebe965fe891a527db92b2183f/Effects/7R%20Multiband%20Correlometer.jsfx</source>
       </version>
     </reapack>
     <reapack name="7R Oscilloscope.jsfx" type="effect" desc="7R Oscilloscope">
