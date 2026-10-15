@@ -1,15 +1,21 @@
 desc:7R Multiband Correlometer
 author:7thResonance
-version: 1.3
+version: 1.4
 about: A simple Multiband Correlometer
         pan visualisation
-changelog: - added left right energy markers (pan visualisation)
+changelog: - added multirate FFT (lower frequencies have more accuracy) 
+           - added avg time
+           - added audio range (analyses this range from the loudest signal) 
 options:no_meter
 
+slider1:64<4,64,1>Bands
+slider2:100<20,2000,10>Average time (ms)
+slider3:60<20,120,1>Range (dB)
+
 // -------------------------------------------------------
-//  64-Band Correlometer  -  REAPER JSFX
-//  Measures L/R phase correlation across 64 log-spaced
-//  frequency bands and displays as vertical bars.
+//  Multiband Correlometer - REAPER JSFX
+//  Measures L/R phase correlation across log-spaced bands.
+//  Uses separate FFT paths below and above 200 Hz.
 //  +1 = in-phase (mono-compatible)
 //   0 = uncorrelated
 //  -1 = anti-phase
@@ -20,181 +26,475 @@ options:no_meter
   gfx_ext_retina == 0 ? gfx_ext_retina = 1;
   gfx_ext_flags |= 0x100 | 0x200;
 
-   fft_size  = 8192;   // must be a power of 2
-   num_bands = 64;
-   hop_size  = fft_size / 4;   // 75% overlap -> 4x update rate
-   nyq       = fft_size / 2;
+  // Analyze above 200 Hz at the host rate. Low-pass and decimate the low
+  // path by eight so 4096 samples span the same time as 32768 host samples.
+  fft_size      = 16384;
+  low_fft_size  = 4096;
+  low_decim     = 8;
+  low_srate     = srate / low_decim;
+  hop_size      = fft_size / 8;
+  // Match the host-rate FFT's update interval: 256 low-rate samples at /8
+  // equals 2048 host samples, while retaining the longer 4096-sample window.
+  low_hop_size  = low_fft_size / 16;
+  nyq           = fft_size / 2;
+  low_nyq       = low_fft_size / 2;
+  split_freq    = 200;
+  num_bands     = floor(max(4, min(64, slider1)));
+  previous_num_bands = num_bands;
+  previous_sample_rate = srate;
+  avg_time_ms   = slider2;
+  range_db      = slider3;
+  avg_time_sec  = max(0.02, avg_time_ms / 1000);
+  avg_coeff     = 0;
+  global_max_db = -150;
 
-  // ---- memory layout ----------------------------------
-  mem_l    = 0;               // [fft_size]   raw left input
-  mem_r    = fft_size;        // [fft_size]   raw right input
-  mem_fl   = fft_size * 2;    // [fft_size*2] complex FFT - left
-  mem_fr   = fft_size * 4;    // [fft_size*2] complex FFT - right
-  mem_win  = fft_size * 6;    // [fft_size]   Hann window coefficients
-  mem_corr = fft_size * 7;    // [128]        smoothed correlation (64 bands)
-  mem_bst  = mem_corr + 128;  // [128]        band start bin index
-  mem_ben  = mem_corr + 256;  // [128]        band end bin index
-  mem_peak = mem_corr + 384;  // [128]        peak-hold values
-  mem_pkdt = mem_corr + 512;  // [128]        peak-hold decay timer
-  mem_en   = mem_corr + 640;  // [128]        raw L energy per band
-  mem_enr  = mem_corr + 768;  // [128]        raw R energy per band
-  mem_ens  = mem_corr + 896;  // [128]        smoothed L energy per band
-  mem_ensr = mem_corr + 1024; // [128]        smoothed R energy per band
+  // ---- Memory layout -----------------------------------
+  mem_l       = 0;
+  mem_r       = fft_size;
+  mem_fl      = fft_size * 2;
+  mem_fr      = fft_size * 4;
+  mem_win     = fft_size * 6;
+  // Keep both complex FFT buffers within their 65536-item JSFX memory blocks.
+  low_base    = 131072;
+  mem_low_l   = low_base;
+  mem_low_r   = low_base + low_fft_size;
+  mem_low_fl  = low_base + low_fft_size * 2;
+  mem_low_fr  = low_base + low_fft_size * 4;
+  mem_low_win = low_base + low_fft_size * 6;
+  mem_state   = low_base + low_fft_size * 7;
+
+  mem_corr    = mem_state;
+  mem_peak    = mem_state + 64;
+  mem_pkdt    = mem_state + 128;
+  mem_ens     = mem_state + 192;
+  mem_ensr    = mem_state + 256;
+  mem_bstlo   = mem_state + 320;
+  mem_benlo   = mem_state + 384;
+  mem_bsthi   = mem_state + 448;
+  mem_benhi   = mem_state + 512;
+  mem_l_sll   = mem_state + 576;
+  mem_l_srr   = mem_state + 640;
+  mem_l_slr   = mem_state + 704;
+  mem_h_sll   = mem_state + 768;
+  mem_h_srr   = mem_state + 832;
+  mem_h_slr   = mem_state + 896;
+  mem_level   = mem_state + 960;
 
   buf_pos = 0;
+  low_buf_pos = 0;
+  low_decim_count = 0;
 
-  // ---- Hann window ------------------------------------
+  // Matched fourth-order Butterworth low-pass for both channels before
+  // decimation. 300 Hz preserves the sub-200 Hz passband and rejects aliases.
+  lp_cutoff = min(300, srate / 16);
+  lp_omega = 2 * $pi * lp_cutoff / srate;
+  lp_cos = cos(lp_omega);
+  lp_sin = sin(lp_omega);
+  lp_alpha = lp_sin / (2 * 0.5411961);
+  lp_a0 = 1 + lp_alpha;
+  lp1_b0 = ((1 - lp_cos) * 0.5) / lp_a0;
+  lp1_b1 = (1 - lp_cos) / lp_a0;
+  lp1_b2 = lp1_b0;
+  lp1_a1 = (-2 * lp_cos) / lp_a0;
+  lp1_a2 = (1 - lp_alpha) / lp_a0;
+  lp_alpha = lp_sin / (2 * 1.306563);
+  lp_a0 = 1 + lp_alpha;
+  lp2_b0 = ((1 - lp_cos) * 0.5) / lp_a0;
+  lp2_b1 = (1 - lp_cos) / lp_a0;
+  lp2_b2 = lp2_b0;
+  lp2_a1 = (-2 * lp_cos) / lp_a0;
+  lp2_a2 = (1 - lp_alpha) / lp_a0;
+
+  // ---- Hann windows ------------------------------------
   i = 0;
   loop(fft_size,
     mem_win[i] = 0.5 * (1.0 - cos(2.0 * $pi * i / fft_size));
     i += 1;
   );
-
-  // ---- Log-spaced band boundaries (64 bands) ----------
-  log_nyq = log(nyq);
   i = 0;
-  loop(num_bands,
-    s = max(1, floor(exp(log_nyq *  i      / num_bands)));
-    e = max(s+1, ceil(exp(log_nyq * (i+1) / num_bands)));
-    e > nyq ? e = nyq;
-    mem_bst[i] = s;
-    mem_ben[i] = e;
+  loop(low_fft_size,
+    mem_low_win[i] = 0.5 * (1.0 - cos(2.0 * $pi * i / low_fft_size));
     i += 1;
   );
 
-  // ---- Initial state ----------------------------------
+  // ---- Band ranges and state ---------------------------
+  max_freq = srate * 0.5;
+  // Keep the bands in the audible range instead of spending many of the
+  // 64 bands below the first useful low-FFT bins.
+  min_freq = min(20, max_freq * 0.5);
+  log_freq_range = log(max_freq / min_freq);
+  low_cut_bin = min(low_fft_size / 2, ceil(split_freq * low_fft_size / low_srate));
+  high_cut_bin = min(nyq, ceil(split_freq * fft_size / srate));
   i = 0;
   loop(num_bands,
+    f0 = min_freq * exp(log_freq_range * i / num_bands);
+    f1 = min_freq * exp(log_freq_range * (i + 1) / num_bands);
+    low_f1 = min(f1, split_freq);
+    low_s = min(low_cut_bin, max(1, ceil(f0 * low_fft_size / low_srate)));
+    low_e = min(low_cut_bin, min(low_fft_size / 2, ceil(low_f1 * low_fft_size / low_srate)));
+    low_e < low_s ? low_e = low_s;
+    f0 < split_freq && low_f1 > f0 && low_e <= low_s ? (
+      low_s = max(1, min(max(1, low_cut_bin - 1), floor(((f0 + low_f1) * 0.5) * low_fft_size / low_srate + 0.5)));
+      low_e = low_s + 1;
+    );
+    high_f0 = max(f0, split_freq);
+    high_s = min(nyq, max(high_cut_bin, ceil(high_f0 * fft_size / srate)));
+    high_e = min(nyq, ceil(f1 * fft_size / srate));
+    high_e < high_s ? high_e = high_s;
+    f1 > high_f0 && high_e <= high_s ? (
+      high_s = max(high_cut_bin, min(max(high_cut_bin, nyq - 1), floor(((high_f0 + f1) * 0.5) * fft_size / srate + 0.5)));
+      high_e = high_s + 1;
+    );
+    mem_bstlo[i] = low_s;
+    mem_benlo[i] = low_e;
+    mem_bsthi[i] = high_s;
+    mem_benhi[i] = high_e;
     mem_corr[i] = 0;
     mem_peak[i] = 0;
     mem_pkdt[i] = 0;
-    mem_en[i]  = 0;
-    mem_enr[i] = 0;
-    mem_ens[i]  = 0;
+    mem_ens[i] = 0;
     mem_ensr[i] = 0;
+    mem_l_sll[i] = 0;
+    mem_l_srr[i] = 0;
+    mem_l_slr[i] = 0;
+    mem_h_sll[i] = 0;
+    mem_h_srr[i] = 0;
+    mem_h_slr[i] = 0;
+    mem_level[i] = -1;
+    i += 1;
+  );
+  // Clear unused state slots so band-count changes cannot expose stale data.
+  i = num_bands;
+  loop(64 - num_bands,
+    mem_corr[i] = 0;
+    mem_peak[i] = 0;
+    mem_pkdt[i] = 0;
+    mem_ens[i] = 0;
+    mem_ensr[i] = 0;
+    mem_l_sll[i] = 0;
+    mem_l_srr[i] = 0;
+    mem_l_slr[i] = 0;
+    mem_h_sll[i] = 0;
+    mem_h_srr[i] = 0;
+    mem_h_slr[i] = 0;
+    mem_level[i] = -1;
     i += 1;
   );
 
-  smooth_coeff = 0.18;  // IIR smoothing (higher = faster response)
   peak_hold    = 30;    // frames before peak starts falling
   peak_decay   = 0.04;  // peak fall rate per frame
   show_lr_energy = 1;    // 1 = show L/R energy lines
   btn_clicked = 0;      // button click tracker
 
-  // ---- -90 dBFS energy gate ---------------------------
-  // sll/srr are sums of squared unnormalized FFT magnitudes.
-  // By Parseval for unnormalized FFT with Hann window:
-  //   average per-bin energy = (3/4) * fft_size * signal_power
-  // At -90 dBFS: signal_power = 10^(-90/10) = 1e-9
-  // So: gate_per_bin = 0.75 * fft_size * 1e-9
-  // Per band: gate_energy = gate_per_bin * bin_count
-  gate_per_bin = 0.75 * fft_size * pow(10, -90.0 / 10.0);
+  // The spectra are normalized by FFT size squared. The range slider
+  // supplies the level-dependent floor used by the analysis gate.
+  fft_norm_main = 1 / (fft_size * fft_size);
+  fft_norm_low = 1 / (low_fft_size * low_fft_size);
+
+
+@slider
+
+  mem_state > 0 ? (
+    num_bands = floor(max(4, min(64, slider1)));
+    avg_time_ms = slider2;
+    range_db = slider3;
+
+    srate != previous_sample_rate ? (
+      low_srate = srate / low_decim;
+      lp_cutoff = min(300, srate / 16);
+      s_lp_omega = 2 * $pi * lp_cutoff / srate;
+      s_lp_cos = cos(s_lp_omega);
+      s_lp_sin = sin(s_lp_omega);
+      s_lp_alpha = s_lp_sin / (2 * 0.5411961);
+      s_lp_a0 = 1 + s_lp_alpha;
+      lp1_b0 = ((1 - s_lp_cos) * 0.5) / s_lp_a0;
+      lp1_b1 = (1 - s_lp_cos) / s_lp_a0;
+      lp1_b2 = lp1_b0;
+      lp1_a1 = (-2 * s_lp_cos) / s_lp_a0;
+      lp1_a2 = (1 - s_lp_alpha) / s_lp_a0;
+      s_lp_alpha = s_lp_sin / (2 * 1.306563);
+      s_lp_a0 = 1 + s_lp_alpha;
+      lp2_b0 = ((1 - s_lp_cos) * 0.5) / s_lp_a0;
+      lp2_b1 = (1 - s_lp_cos) / s_lp_a0;
+      lp2_b2 = lp2_b0;
+      lp2_a1 = (-2 * s_lp_cos) / s_lp_a0;
+      lp2_a2 = (1 - s_lp_alpha) / s_lp_a0;
+      lp1_x1_l = 0; lp1_x2_l = 0; lp1_y1_l = 0; lp1_y2_l = 0;
+      lp1_x1_r = 0; lp1_x2_r = 0; lp1_y1_r = 0; lp1_y2_r = 0;
+      lp2_x1_l = 0; lp2_x2_l = 0; lp2_y1_l = 0; lp2_y2_l = 0;
+      lp2_x1_r = 0; lp2_x2_r = 0; lp2_y1_r = 0; lp2_y2_r = 0;
+      low_decim_count = 0;
+      low_buf_pos = 0;
+      buf_pos = 0;
+    );
+
+    (num_bands != previous_num_bands || srate != previous_sample_rate) ? (
+      max_freq = srate * 0.5;
+      min_freq = min(20, max_freq * 0.5);
+      log_freq_range = log(max_freq / min_freq);
+      low_cut_bin = min(low_nyq, ceil(split_freq * low_fft_size / low_srate));
+      high_cut_bin = min(nyq, ceil(split_freq * fft_size / srate));
+      s_i = 0;
+      loop(num_bands,
+        s_f0 = min_freq * exp(log_freq_range * s_i / num_bands);
+        s_f1 = min_freq * exp(log_freq_range * (s_i + 1) / num_bands);
+        s_low_f1 = min(s_f1, split_freq);
+        s_low_s = min(low_cut_bin, max(1, ceil(s_f0 * low_fft_size / low_srate)));
+        s_low_e = min(low_cut_bin, min(low_nyq, ceil(s_low_f1 * low_fft_size / low_srate)));
+        s_low_e < s_low_s ? s_low_e = s_low_s;
+        s_f0 < split_freq && s_low_f1 > s_f0 && s_low_e <= s_low_s ? (
+          s_low_s = max(1, min(max(1, low_cut_bin - 1), floor(((s_f0 + s_low_f1) * 0.5) * low_fft_size / low_srate + 0.5)));
+          s_low_e = s_low_s + 1;
+        );
+        s_high_f0 = max(s_f0, split_freq);
+        s_high_s = min(nyq, max(high_cut_bin, ceil(s_high_f0 * fft_size / srate)));
+        s_high_e = min(nyq, ceil(s_f1 * fft_size / srate));
+        s_high_e < s_high_s ? s_high_e = s_high_s;
+        s_f1 > s_high_f0 && s_high_e <= s_high_s ? (
+          s_high_s = max(high_cut_bin, min(max(high_cut_bin, nyq - 1), floor(((s_high_f0 + s_f1) * 0.5) * fft_size / srate + 0.5)));
+          s_high_e = s_high_s + 1;
+        );
+        mem_bstlo[s_i] = s_low_s;
+        mem_benlo[s_i] = s_low_e;
+        mem_bsthi[s_i] = s_high_s;
+        mem_benhi[s_i] = s_high_e;
+        s_i += 1;
+      );
+      s_i = 0;
+      loop(64,
+        mem_corr[s_i] = 0;
+        mem_peak[s_i] = 0;
+        mem_pkdt[s_i] = 0;
+        mem_ens[s_i] = 0;
+        mem_ensr[s_i] = 0;
+        mem_l_sll[s_i] = 0;
+        mem_l_srr[s_i] = 0;
+        mem_l_slr[s_i] = 0;
+        mem_h_sll[s_i] = 0;
+        mem_h_srr[s_i] = 0;
+        mem_h_slr[s_i] = 0;
+        mem_level[s_i] = -1;
+        s_i += 1;
+      );
+      global_max_db = -150;
+      previous_num_bands = num_bands;
+      previous_sample_rate = srate;
+    );
+  );
+
+
+@block
+
+  avg_time_sec = max(0.02, avg_time_ms / 1000);
+  avg_coeff = 1 - exp(-hop_size / (srate * avg_time_sec));
 
 
 @sample
 
+  // Keep audio-thread scratch variables separate from @gfx variables.
   mem_l[buf_pos] = spl0;
   mem_r[buf_pos] = spl1;
   buf_pos += 1;
 
+  // Two matched biquads remove energy that could alias into the low bands.
+  a_lp1_l = lp1_b0*spl0 + lp1_b1*lp1_x1_l + lp1_b2*lp1_x2_l - lp1_a1*lp1_y1_l - lp1_a2*lp1_y2_l;
+  lp1_x2_l = lp1_x1_l; lp1_x1_l = spl0;
+  lp1_y2_l = lp1_y1_l; lp1_y1_l = a_lp1_l;
+  a_lp1_r = lp1_b0*spl1 + lp1_b1*lp1_x1_r + lp1_b2*lp1_x2_r - lp1_a1*lp1_y1_r - lp1_a2*lp1_y2_r;
+  lp1_x2_r = lp1_x1_r; lp1_x1_r = spl1;
+  lp1_y2_r = lp1_y1_r; lp1_y1_r = a_lp1_r;
+
+  a_lp2_l = lp2_b0*a_lp1_l + lp2_b1*lp2_x1_l + lp2_b2*lp2_x2_l - lp2_a1*lp2_y1_l - lp2_a2*lp2_y2_l;
+  lp2_x2_l = lp2_x1_l; lp2_x1_l = a_lp1_l;
+  lp2_y2_l = lp2_y1_l; lp2_y1_l = a_lp2_l;
+  a_lp2_r = lp2_b0*a_lp1_r + lp2_b1*lp2_x1_r + lp2_b2*lp2_x2_r - lp2_a1*lp2_y1_r - lp2_a2*lp2_y2_r;
+  lp2_x2_r = lp2_x1_r; lp2_x1_r = a_lp1_r;
+  lp2_y2_r = lp2_y1_r; lp2_y1_r = a_lp2_r;
+
+  low_decim_count += 1;
+  low_decim_count >= low_decim ? (
+    low_decim_count = 0;
+    mem_low_l[low_buf_pos] = a_lp2_l;
+    mem_low_r[low_buf_pos] = a_lp2_r;
+    low_buf_pos += 1;
+  );
+
+  a_update_needed = 0;
+
   buf_pos >= fft_size ? (
 
     // --- Window and interleave into complex buffers ----
-    i = 0;
+    a_i = 0;
     loop(fft_size,
-      w = mem_win[i];
-      mem_fl[i*2]   = mem_l[i] * w;
-      mem_fl[i*2+1] = 0;
-      mem_fr[i*2]   = mem_r[i] * w;
-      mem_fr[i*2+1] = 0;
-      i += 1;
+      a_window = mem_win[a_i];
+      mem_fl[a_i*2]   = mem_l[a_i] * a_window;
+      mem_fl[a_i*2+1] = 0;
+      mem_fr[a_i*2]   = mem_r[a_i] * a_window;
+      mem_fr[a_i*2+1] = 0;
+      a_i += 1;
     );
 
     fft(mem_fl, fft_size);  fft_permute(mem_fl, fft_size);
     fft(mem_fr, fft_size);  fft_permute(mem_fr, fft_size);
 
-    // --- Per-band Pearson correlation ------------------
-    //  corr = Re( sum L[k]*conj(R[k]) ) / sqrt( sum|L|^2 * sum|R|^2 )
-    b = 0;
+    // --- Upper range: 16384-point FFT, from 200 Hz up ---
+    a_b = 0;
     loop(num_bands,
-      sll = 0;
-      srr = 0;
-      slr = 0;
+      a_sll = 0;
+      a_srr = 0;
+      a_slr = 0;
 
-      bin_count = mem_ben[b] - mem_bst[b];
-      pl = mem_fl + mem_bst[b] * 2;
-      pr = mem_fr + mem_bst[b] * 2;
+      a_bin_start = mem_bsthi[a_b];
+      a_bin_count = mem_benhi[a_b] - a_bin_start;
+      a_pl = mem_fl + a_bin_start * 2;
+      a_pr = mem_fr + a_bin_start * 2;
 
-      loop(bin_count,
-        lre = pl[0];  lim = pl[1];
-        rre = pr[0];  rim = pr[1];
+      loop(a_bin_count,
+        a_lre = a_pl[0];  a_lim = a_pl[1];
+        a_rre = a_pr[0];  a_rim = a_pr[1];
 
-        sll += lre*lre + lim*lim;
-        srr += rre*rre + rim*rim;
-        slr += lre*rre + lim*rim;
+        a_sll += a_lre*a_lre + a_lim*a_lim;
+        a_srr += a_rre*a_rre + a_rim*a_rim;
+        a_slr += a_lre*a_rre + a_lim*a_rim;
 
-        pl += 2;
-        pr += 2;
+        a_pl += 2;
+        a_pr += 2;
       );
 
-      // Store raw energy for smoothing
-      mem_en[b]  = sll;
-      mem_enr[b] = srr;
+      mem_h_sll[a_b] = a_sll * fft_norm_main;
+      mem_h_srr[a_b] = a_srr * fft_norm_main;
+      mem_h_slr[a_b] = a_slr * fft_norm_main;
 
-      // -90 dBFS energy gate: below this threshold both channels
-      // contain only FFT rounding residuals that are identical on
-      // L and R (both input silence), producing a spurious +1.
-      gate_energy = gate_per_bin * bin_count;
-      (sll > gate_energy && srr > gate_energy) ? (
-        c = slr / sqrt(sll * srr);
-        c = max(-1.0, min(1.0, c));
-      ) : (
-        c = 0;
-        // Reset peak when signal goes silent
-        mem_peak[b] = 0;
-      );
-
-      // IIR smooth
-      mem_corr[b] += (c - mem_corr[b]) * smooth_coeff;
-
-      // Peak hold
-      abs(mem_corr[b]) > abs(mem_peak[b]) ? (
-        mem_peak[b] = mem_corr[b];
-        mem_pkdt[b] = 0;
-      ) : (
-        mem_pkdt[b] += 1;
-        mem_pkdt[b] > peak_hold ? (
-          mem_peak[b] *= (1.0 - peak_decay);
-        );
-      );
-
-      b += 1;
+      a_b += 1;
     );
 
-    // --- Smooth per-band energy ---
-    b = 0;
-    loop(num_bands,
-      old_el = mem_ens[b];
-      old_er = mem_ensr[b];
-      raw_el = mem_en[b];
-      raw_er = mem_enr[b];
-      // Faster IIR for energy to see per-band changes
-      en_smooth = 0.4;
-      mem_ens[b]  = old_el > 0 ? old_el + (raw_el - old_el) * en_smooth : raw_el;
-      mem_ensr[b] = old_er > 0 ? old_er + (raw_er - old_er) * en_smooth : raw_er;
-      b += 1;
-    );
-
-    // --- Slide buffer: keep newest (fft_size - hop_size) samples ---
-    i = 0;
+    // --- Slide short buffer by 87.5% overlap ------------
+    a_i = 0;
     loop(fft_size - hop_size,
-      mem_l[i] = mem_l[i + hop_size];
-      mem_r[i] = mem_r[i + hop_size];
-      i += 1;
+      mem_l[a_i] = mem_l[a_i + hop_size];
+      mem_r[a_i] = mem_r[a_i + hop_size];
+      a_i += 1;
     );
     buf_pos = fft_size - hop_size;
+    a_update_needed = 1;
 
-  ); // end buf_pos >= fft_size
+  ); // end short FFT
+
+  low_buf_pos >= low_fft_size ? (
+
+    // --- Lower range: 4096-point FFT at srate/8, below 200 Hz ---
+    a_i = 0;
+    loop(low_fft_size,
+      a_window = mem_low_win[a_i];
+      mem_low_fl[a_i*2]   = mem_low_l[a_i] * a_window;
+      mem_low_fl[a_i*2+1] = 0;
+      mem_low_fr[a_i*2]   = mem_low_r[a_i] * a_window;
+      mem_low_fr[a_i*2+1] = 0;
+      a_i += 1;
+    );
+
+    fft(mem_low_fl, low_fft_size);  fft_permute(mem_low_fl, low_fft_size);
+    fft(mem_low_fr, low_fft_size);  fft_permute(mem_low_fr, low_fft_size);
+
+    a_b = 0;
+    loop(num_bands,
+      a_sll = 0;
+      a_srr = 0;
+      a_slr = 0;
+      a_bin_start = mem_bstlo[a_b];
+      a_bin_count = mem_benlo[a_b] - a_bin_start;
+      a_pl = mem_low_fl + a_bin_start * 2;
+      a_pr = mem_low_fr + a_bin_start * 2;
+      loop(a_bin_count,
+        a_lre = a_pl[0];  a_lim = a_pl[1];
+        a_rre = a_pr[0];  a_rim = a_pr[1];
+        a_sll += a_lre*a_lre + a_lim*a_lim;
+        a_srr += a_rre*a_rre + a_rim*a_rim;
+        a_slr += a_lre*a_rre + a_lim*a_rim;
+        a_pl += 2;
+        a_pr += 2;
+      );
+      mem_l_sll[a_b] = a_sll * fft_norm_low;
+      mem_l_srr[a_b] = a_srr * fft_norm_low;
+      mem_l_slr[a_b] = a_slr * fft_norm_low;
+      a_b += 1;
+    );
+
+    // --- Slide low-rate buffer by 93.75% overlap ----------
+    a_b = 0;
+    loop(low_fft_size - low_hop_size,
+      mem_low_l[a_b] = mem_low_l[a_b + low_hop_size];
+      mem_low_r[a_b] = mem_low_r[a_b + low_hop_size];
+      a_b += 1;
+    );
+    low_buf_pos = low_fft_size - low_hop_size;
+    a_update_needed = 1;
+
+  ); // end long FFT
+
+  a_update_needed ? (
+    // Smooth band energy first so the range floor and band coloring use
+    // the same averaging time as the correlation display.
+    a_max_band_db = -150;
+    a_b = 0;
+    loop(num_bands,
+      a_sll = mem_l_sll[a_b] + mem_h_sll[a_b];
+      a_srr = mem_l_srr[a_b] + mem_h_srr[a_b];
+      a_old_el = mem_ens[a_b];
+      a_old_er = mem_ensr[a_b];
+      mem_ens[a_b] = a_old_el > 0 ? a_old_el + (a_sll - a_old_el) * avg_coeff : a_sll;
+      mem_ensr[a_b] = a_old_er > 0 ? a_old_er + (a_srr - a_old_er) * avg_coeff : a_srr;
+      a_band_power = max(mem_ens[a_b], mem_ensr[a_b]) * (32 / 3);
+      a_band_db = a_band_power > 0 ? 10 * log(a_band_power) / log(10) : -150;
+      a_max_band_db = max(a_max_band_db, a_band_db);
+      a_b += 1;
+    );
+
+    // Fast attack, average-time release, so the floor follows the loudest
+    // currently active band without jumping on brief level dips.
+    a_max_band_db > global_max_db ? (
+      global_max_db = a_max_band_db;
+    ) : (
+      global_max_db += (a_max_band_db - global_max_db) * avg_coeff;
+    );
+    a_floor_db = max(-150, global_max_db - range_db);
+    a_floor_power = pow(10, a_floor_db / 10);
+    a_display_span_db = max(1, global_max_db - a_floor_db);
+
+    // Apply the dynamic range gate to each correlation band.
+    a_b = 0;
+    loop(num_bands,
+      a_sll = mem_l_sll[a_b] + mem_h_sll[a_b];
+      a_srr = mem_l_srr[a_b] + mem_h_srr[a_b];
+      a_slr = mem_l_slr[a_b] + mem_h_slr[a_b];
+      a_low_count = mem_benlo[a_b] - mem_bstlo[a_b];
+      a_high_count = mem_benhi[a_b] - mem_bsthi[a_b];
+      a_gate_energy = 0.75 * a_floor_power *
+                    (a_low_count / low_fft_size + a_high_count / fft_size);
+      a_band_power = max(mem_ens[a_b], mem_ensr[a_b]) * (32 / 3);
+      a_band_db = a_band_power > 0 ? 10 * log(a_band_power) / log(10) : -150;
+      mem_level[a_b] = a_band_db >= a_floor_db ?
+        max(0, min(1, (a_band_db - a_floor_db) / a_display_span_db)) : -1;
+
+      (a_band_db >= a_floor_db && a_sll > a_gate_energy && a_srr > a_gate_energy) ? (
+        a_c = a_slr / sqrt(a_sll * a_srr);
+        a_c = max(-1.0, min(1.0, a_c));
+      ) : (
+        a_c = 0;
+        mem_peak[a_b] = 0;
+      );
+
+      mem_corr[a_b] += (a_c - mem_corr[a_b]) * avg_coeff;
+      abs(mem_corr[a_b]) > abs(mem_peak[a_b]) ? (
+        mem_peak[a_b] = mem_corr[a_b];
+        mem_pkdt[a_b] = 0;
+      ) : (
+        mem_pkdt[a_b] += 1;
+        mem_pkdt[a_b] > peak_hold ? mem_peak[a_b] *= (1.0 - peak_decay);
+      );
+      a_b += 1;
+    );
+  );
 
 
 @gfx 640 400
@@ -209,7 +509,7 @@ options:no_meter
   cy = floor(h * 0.5 + 0.5);
   hh = cy - 2;   // usable half-height in pixels
 
-  display_bands = 64;
+   display_bands = num_bands;
   bw = w / display_bands;
 
   // ---- Background -------------------------------------
@@ -285,9 +585,8 @@ options:no_meter
     fm_i == 7 ? fm_f = freq_mark_7 :
                 fm_f = freq_mark_8;
 
-    fm_bin = fm_f * fft_size / srate;
-    fm_bin >= 1 && fm_bin <= nyq ? (
-      fm_x = floor(log(fm_bin) / log_nyq * w);
+     fm_f >= min_freq && fm_f <= max_freq ? (
+       fm_x = floor(log(fm_f / min_freq) / log_freq_range * w);
 
       gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.35; gfx_a = 1;
       gfx_line(fm_x, 0, fm_x, h, 0);
@@ -311,16 +610,18 @@ options:no_meter
    );
    ); // end frequency grid conditional
 
-  // ---- Bars -------------------------------------------
-   // Always draw all 64 bands; only UI elements are reduced in small mode.
+   // ---- Bars -------------------------------------------
+    // Draw only the selected number of bands.
    i = 0;
-   loop(64,
+    loop(num_bands,
      c = mem_corr[i];
+      g_band_level = mem_level[i];
+      g_band_in_range = g_band_level >= 0;
+      bx    = floor(i * bw);
+      bw_px = floor((i+1) * bw) - bx;
 
      // Skip very small values
-     abs(c) < 0.01 ? 0 : (
-       bx    = floor(i * bw);
-       bw_px = floor((i+1) * bw) - bx;
+     !g_band_in_range || abs(c) < 0.01 ? 0 : (
        bar_h = floor(c * hh);
 
        // Colour: blue for positive, pink for negative
@@ -335,7 +636,11 @@ options:no_meter
          gfx_g = 0.10 + t * 0.20;
          gfx_b = 0.55 + t * 0.35;
        );
-       gfx_a = 0.60 + abs(c) * 0.40;
+        g_color_gain = 0.35 + 0.65 * g_band_level;
+        gfx_r *= g_color_gain;
+        gfx_g *= g_color_gain;
+        gfx_b *= g_color_gain;
+       gfx_a = (0.15 + 0.85 * g_band_level) * (0.60 + abs(c) * 0.40);
 
        bar_h > 0 ? (
          gfx_rect(bx, cy - bar_h, bw_px, bar_h);
@@ -347,14 +652,14 @@ options:no_meter
      // ---- Peak tick (hidden in small mode) -------------
      small_mode ? 0 : (
        pk = mem_peak[i];
-       abs(pk) > 0.015 ? (
+       g_band_in_range && abs(pk) > 0.015 ? (
          pk_y = cy - floor(pk * hh);
          pk >= 0 ? (
            gfx_r = 0.30; gfx_g = 0.60; gfx_b = 1.00;
          ) : (
            gfx_r = 1.00; gfx_g = 0.20; gfx_b = 0.70;
          );
-         gfx_a = 0.90;
+         gfx_a = 0.90 * (0.15 + 0.85 * g_band_level);
          gfx_line(bx, pk_y, bx + bw_px - 1, pk_y, 0);
        );
      );
@@ -377,10 +682,13 @@ options:no_meter
       mark_w = 4; mark_h = 3;
     );
     i = 0;
-    loop(64,
+    loop(num_bands,
       el = mem_ens[i];
       er = mem_ensr[i];
-      el > 0.0000000001 || er > 0.0000000001 ? (
+      g_band_level = mem_level[i];
+      g_band_in_range = g_band_level >= 0;
+      g_band_in_range && (el > 0.0000000001 || er > 0.0000000001) ? (
+        gfx_a = 0.15 + 0.65 * g_band_level;
         total_e = el + er;
         total_e > 0 ? ratio = er / total_e : ratio = 0.5;
         target_y = ratio * h;
