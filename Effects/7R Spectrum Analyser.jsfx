@@ -1,14 +1,13 @@
 desc:7R Spectrum Analyser
 Author: 7thResonance
-version: 1.13
+version: 1.14
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue
     - RMS mode
     - ITU-R 468 weighting mode
     - Normalisation mode
-changelog: - added ISO226 weighting.
-           - Fixed some menu bugs
+changelog: - add LF HQ button for added accuracy below 200hz.
            
 
 //tags: analysis FFT meter spectrum
@@ -41,6 +40,7 @@ slider12:0<0,1,1{disabled,enabled}>-normalise display   // NEW: normalisation to
 slider13:0<0,6,1{off,1/12 octave,1/6 octave,1/3 octave,1/2 octave,1 octave,2 octaves}>-octave smoothing
 slider14:0<0,1,1{disabled,enabled}>-auto freeze on stop
 slider15:80<0,90,1>-phon reference (ISO 226)
+slider16:0<0,1,1{disabled,enabled}>-LF HQ (under 200 Hz)
 
 in_pin:left input
 in_pin:right input
@@ -63,6 +63,23 @@ old_itu = 0;
 rms_button = 0;          // NEW
 normalize_button = 0;    // NEW
 freeze_button = 0;
+low_accuracy_button = 0;
+
+// Optional low-frequency path: 8x anti-aliased decimation followed by a
+// 4096-point FFT at one eighth of the host sample rate.
+low_fft_size = 4096;
+low_num_bins = low_fft_size * 0.5;
+low_decim = 8;
+low_srate = max(srate / low_decim, 1);
+low_split_freq = 200;
+low_ring_pos = 0;
+low_samples_filled = 0;
+low_decim_count = 0;
+low_rms_write_pos = 0;
+low_rms_frames_stored = 0;
+low_windowtype = -1;
+low_fft_valid = 0;
+low_rebuild_needed = 0;
 
 // New: limit RMS history frames to a safe number to avoid JSFX memory overflow
 max_rms_frames = 50; // Increased from 20 for better averaging
@@ -88,6 +105,7 @@ auto_freeze_active = 0;
 was_auto_freeze_active = 0;
 was_playing = 0;
 old_phon = slider15;
+old_low_accuracy = slider16;
 // ISO 226 data. At 80 phon, use the supplied inverse-contour values directly.
 // Other phon references use the ISO 226 equation to build the same curve.
 iso_f_count = 29;
@@ -164,6 +182,41 @@ function iso226_weighting_gain(freq, mode)
   mode == 3 ? iso226_interp(freq) : 0;
 );
 
+function update_lowpass_coeffs()
+  local(fc,omega,c,s,alpha,a0)
+(
+  fc = min(300, srate / 16);
+  omega = 2 * $pi * fc / max(srate, 1);
+  c = cos(omega);
+  s = sin(omega);
+  alpha = s / (2 * 0.5411961);
+  a0 = 1 + alpha;
+  low_lp1_b0 = ((1 - c) * 0.5) / a0;
+  low_lp1_b1 = (1 - c) / a0;
+  low_lp1_b2 = low_lp1_b0;
+  low_lp1_a1 = (-2 * c) / a0;
+  low_lp1_a2 = (1 - alpha) / a0;
+  alpha = s / (2 * 1.306563);
+  a0 = 1 + alpha;
+  low_lp2_b0 = ((1 - c) * 0.5) / a0;
+  low_lp2_b1 = (1 - c) / a0;
+  low_lp2_b2 = low_lp2_b0;
+  low_lp2_a1 = (-2 * c) / a0;
+  low_lp2_a2 = (1 - alpha) / a0;
+);
+
+function reset_lowpass_states()
+(
+  low_lp1_x1_sum = low_lp1_x2_sum = low_lp1_y1_sum = low_lp1_y2_sum = 0;
+  low_lp2_x1_sum = low_lp2_x2_sum = low_lp2_y1_sum = low_lp2_y2_sum = 0;
+  low_lp1_x1_side = low_lp1_x2_side = low_lp1_y1_side = low_lp1_y2_side = 0;
+  low_lp2_x1_side = low_lp2_x2_side = low_lp2_y1_side = low_lp2_y2_side = 0;
+);
+
+// Set up the decimator after its helper functions have been defined.
+update_lowpass_coeffs();
+reset_lowpass_states();
+
 r7_hp1_gain = 1;
 
 // --- Memory layout (safe, minimal) ---
@@ -220,6 +273,24 @@ iso80_data = iso_Lp + iso_f_count;
 iso_data = iso80_data + iso_f_count;
 iso_log_freq = iso_data + iso_f_count;
 iso_derivatives = iso_log_freq + iso_f_count;
+
+// Dedicated buffers for the downsampled low-frequency FFT path.
+low_mem_base = iso_derivatives + iso_f_count + 16;
+low_ring_sum = low_mem_base;
+low_ring_side = low_ring_sum + low_fft_size;
+low_window = low_ring_side + low_fft_size;
+// REAPER FFT buffers must not cross a 65536-slot memory boundary. The main
+// workspaces are aligned; align this one separately for the 4096-point FFT.
+low_fft_workspace = floor((low_window + low_fft_size + 65535) / 65536) * 65536;
+low_mag_buf_temp = low_fft_workspace + low_fft_size * 2;
+low_mag_buf_temp_side = low_mag_buf_temp + low_num_bins;
+low_integrate_buf = low_mag_buf_temp_side + low_num_bins;
+low_integrate_buf2 = low_integrate_buf + low_num_bins;
+low_integrate_phase = low_integrate_buf2 + low_num_bins;
+low_display_main_db = low_integrate_phase + low_num_bins;
+low_display_side_db = low_display_main_db + low_num_bins;
+low_rms_buf_main = low_display_side_db + low_num_bins;
+low_rms_buf_derived = low_rms_buf_main + low_num_bins * max_rms_frames;
 
 iso_f[0]=20;iso_f[1]=25;iso_f[2]=31.5;iso_f[3]=40;iso_f[4]=50;iso_f[5]=63;iso_f[6]=80;iso_f[7]=100;iso_f[8]=125;iso_f[9]=160;iso_f[10]=200;iso_f[11]=250;iso_f[12]=315;iso_f[13]=400;iso_f[14]=500;iso_f[15]=630;iso_f[16]=800;iso_f[17]=1000;iso_f[18]=1250;iso_f[19]=1600;iso_f[20]=2000;iso_f[21]=2500;iso_f[22]=3150;iso_f[23]=4000;iso_f[24]=5000;iso_f[25]=6300;iso_f[26]=8000;iso_f[27]=10000;iso_f[28]=12500;
 iso_af[0]=0.532;iso_af[1]=0.506;iso_af[2]=0.480;iso_af[3]=0.455;iso_af[4]=0.432;iso_af[5]=0.409;iso_af[6]=0.387;iso_af[7]=0.367;iso_af[8]=0.349;iso_af[9]=0.330;iso_af[10]=0.315;iso_af[11]=0.301;iso_af[12]=0.288;iso_af[13]=0.276;iso_af[14]=0.267;iso_af[15]=0.259;iso_af[16]=0.253;iso_af[17]=0.250;iso_af[18]=0.246;iso_af[19]=0.244;iso_af[20]=0.243;iso_af[21]=0.243;iso_af[22]=0.243;iso_af[23]=0.242;iso_af[24]=0.242;iso_af[25]=0.245;iso_af[26]=0.254;iso_af[27]=0.271;iso_af[28]=0.301;
@@ -286,6 +357,25 @@ function compute_rms_magnitude(bin_idx, current_mag, is_derived)
 
   // Compute mean power and return sqrt -> true RMS magnitude
   sqrt( sum / max(actual_frames, 1) );
+);
+
+function compute_low_rms_magnitude(bin_idx, current_mag, is_derived)
+  local(sum, frame, read_idx, rms_buf_base, actual_frames, bin_offset)
+(
+  rms_buf_base = is_derived ? low_rms_buf_derived : low_rms_buf_main;
+  bin_offset = low_rms_write_pos * low_num_bins + bin_idx;
+  rms_buf_base[bin_offset] = sqr(current_mag);
+  sum = 0;
+  frame = 0;
+  actual_frames = min(low_rms_frames_to_avg, low_rms_frames_stored + 1);
+  loop(actual_frames,
+    read_idx = low_rms_write_pos - frame;
+    read_idx < 0 ? read_idx += max_rms_frames;
+    bin_offset = read_idx * low_num_bins + bin_idx;
+    sum += rms_buf_base[bin_offset];
+    frame += 1;
+  );
+  sqrt(sum / max(actual_frames, 1));
 );
 
 function get_octave_smoothing_width(mode)
@@ -393,16 +483,16 @@ function update_7r_coeffs()
   r7_hs_a2 = ((A + 1) - (A - 1) * cw - 2 * sqrtA * alpha) / a0;
 );
 
-function apply_octave_smoothing(num_bins, half_ratio)
+function apply_octave_smoothing(num_bins, half_ratio, buffer_base)
   local(i, dc_mag, left_pos, left_idx, right_idx, count)
 (
   half_ratio > 1 && num_bins > 1 ? (
-    dc_mag = mag_buf_temp[0];
+     dc_mag = buffer_base[0];
 
     smooth_prefix[0] = 0;
     i = 0;
     loop(num_bins,
-      smooth_prefix[i + 1] = smooth_prefix[i] + mag_buf_temp[i];
+       smooth_prefix[i + 1] = smooth_prefix[i] + buffer_base[i];
       i += 1;
     );
 
@@ -418,11 +508,11 @@ function apply_octave_smoothing(num_bins, half_ratio)
       right_idx >= num_bins ? right_idx = num_bins - 1;
 
       count = right_idx - left_idx + 1;
-      mag_buf_temp[i] = (smooth_prefix[right_idx + 1] - smooth_prefix[left_idx]) / max(count, 1);
+       buffer_base[i] = (smooth_prefix[right_idx + 1] - smooth_prefix[left_idx]) / max(count, 1);
       i += 1;
     );
 
-    mag_buf_temp[0] = dc_mag;
+     buffer_base[0] = dc_mag;
   );
 );
 
@@ -482,6 +572,18 @@ slider10 != old_rms ? (
   old_rms = slider10;
   rms_frames_stored = 0;
   rms_write_pos = 0;
+  low_rms_frames_stored = 0;
+  low_rms_write_pos = 0;
+);
+slider16 != old_low_accuracy ? (
+  old_low_accuracy = slider16;
+  low_fft_valid = 0;
+  low_rebuild_needed = slider16 > 0.5;
+  low_rms_frames_stored = 0;
+  low_rms_write_pos = 0;
+  integrate_en = 0;
+  update = 1;
+  old_w = 0;
 );
 // NEW: handle normalise toggle changes so disabling resets state
 slider12 != old_norm ? (
@@ -519,6 +621,8 @@ slider11 <= 0 ? (
     slider_automate(slider10);
     rms_frames_stored = 0;
     rms_write_pos = 0;
+    low_rms_frames_stored = 0;
+    low_rms_write_pos = 0;
   );
 );
 
@@ -537,6 +641,15 @@ srate != old_srate ? (
     i += 1;
   );
   reset_7r_states();
+  low_srate = max(srate / low_decim, 1);
+  update_lowpass_coeffs();
+  reset_lowpass_states();
+  low_ring_pos = 0;
+  low_samples_filled = 0;
+  low_decim_count = 0;
+  low_rms_write_pos = 0;
+  low_rms_frames_stored = 0;
+  low_fft_valid = 0;
 );
 is_playing = (play_state & 1) ? 1 : 0;
 !is_playing && was_playing ? (
@@ -645,11 +758,43 @@ slider9 == 1 ? (
   filtered_r = spl1;
 );
 
+// Matched fourth-order low-pass on sum and side before 8x decimation.
+low_in_sum = filtered_l + filtered_r;
+low_lp1_sum = low_lp1_b0*low_in_sum + low_lp1_b1*low_lp1_x1_sum + low_lp1_b2*low_lp1_x2_sum - low_lp1_a1*low_lp1_y1_sum - low_lp1_a2*low_lp1_y2_sum;
+low_lp1_x2_sum = low_lp1_x1_sum; low_lp1_x1_sum = low_in_sum;
+low_lp1_y2_sum = low_lp1_y1_sum; low_lp1_y1_sum = low_lp1_sum;
+low_lp2_sum = low_lp2_b0*low_lp1_sum + low_lp2_b1*low_lp2_x1_sum + low_lp2_b2*low_lp2_x2_sum - low_lp2_a1*low_lp2_y1_sum - low_lp2_a2*low_lp2_y2_sum;
+low_lp2_x2_sum = low_lp2_x1_sum; low_lp2_x1_sum = low_lp1_sum;
+low_lp2_y2_sum = low_lp2_y1_sum; low_lp2_y1_sum = low_lp2_sum;
+
+low_in_side = filtered_l - filtered_r;
+low_lp1_side = low_lp1_b0*low_in_side + low_lp1_b1*low_lp1_x1_side + low_lp1_b2*low_lp1_x2_side - low_lp1_a1*low_lp1_y1_side - low_lp1_a2*low_lp1_y2_side;
+low_lp1_x2_side = low_lp1_x1_side; low_lp1_x1_side = low_in_side;
+low_lp1_y2_side = low_lp1_y1_side; low_lp1_y1_side = low_lp1_side;
+low_lp2_side = low_lp2_b0*low_lp1_side + low_lp2_b1*low_lp2_x1_side + low_lp2_b2*low_lp2_x2_side - low_lp2_a1*low_lp2_y1_side - low_lp2_a2*low_lp2_y2_side;
+low_lp2_x2_side = low_lp2_x1_side; low_lp2_x1_side = low_lp1_side;
+low_lp2_y2_side = low_lp2_y1_side; low_lp2_y1_side = low_lp2_side;
+
 (freeze_spectrum < 0.5 && auto_freeze_active < 0.5) ? (
   abs(recpos[]=filtered_l+filtered_r) > minvol ? update=1;
   // derived stream: Side = (L - R)
   derived = filtered_l - filtered_r;
   abs(recpos2[]=derived) > minvol ? update=1;
+  low_decim_count += 1;
+  low_decim_count >= low_decim ? (
+    low_decim_count = 0;
+    low_ring_sum[low_ring_pos] = low_lp2_sum;
+    low_ring_side[low_ring_pos] = low_lp2_side;
+    abs(low_lp2_sum) > minvol || abs(low_lp2_side) > minvol ? update=1;
+    low_ring_pos += 1;
+    low_ring_pos >= low_fft_size ? low_ring_pos = 0;
+    low_samples_filled < low_fft_size ? (
+      low_samples_filled += 1;
+      // Ensure @gfx switches to the high-resolution low band as soon as the
+      // first complete 4096-sample decimated window is available.
+      low_samples_filled == low_fft_size && slider16 > 0.5 ? update = 1;
+    );
+  );
   // advance primary recpos (original buffer starts at 0)
   recpos = ((recpos+1) >= histsize ? 0 : (recpos+1));
   // advance derived recpos (buffer starts at recpos2_offset)
@@ -727,12 +872,13 @@ function cycle_slider(x, y, z, dx)
 );
 
 function draw_frozen_spectrum()
-  local(i, tx, lx, ty, ly, tx0, lx0, fill_slmin, fill_slast, freq)
-  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,sc,Kdb,slider8,slider9,display_main_db,display_side_db,integrate_buf,integrate_buf2,has_spectrum_data,srate)
+  local(i, tx, lx, ty, ly, tx0, lx0, fill_slmin, fill_slast, freq, high_draw_started, low_draw_started, seam_width, seam_bin0, seam_bin1, seam_frac, seam_main_db, seam_side_db, seam_t, seam_hi_bin, seam_hi_freq, seam_hi_x, seam_hi_y)
+  globals(gfx_h,gfx_x,gfx_y,gfx_r,gfx_g,gfx_b,gfx_a,fftsize,xscale,sc,Kdb,slider8,slider9,display_main_db,display_side_db,integrate_buf,integrate_buf2,has_spectrum_data,srate,low_fft_valid,low_split_freq,low_srate,low_fft_size,low_num_bins,low_integrate_buf,low_integrate_buf2,low_display_main_db,low_display_side_db)
 (
   has_spectrum_data ? (
     i=0;
     lx=0;
+    high_draw_started=0;
     fill_slmin=gfx_h;
     fill_slast=0;
     loop(fftsize*0.5,
@@ -741,34 +887,39 @@ function draw_frozen_spectrum()
       ty = (display_main_db[i] / Kdb) * -0.5 * sc + 20;
       tx = freq_to_screen_pos_anchored(i * srate / fftsize);
 
-      i ? (
-        gfx_r=0; gfx_g=0; gfx_b=1;
-        gfx_a=0.125;
-        tx0=tx|0;
-        lx0=lx|0;
-        tx0>lx0 ? (
-          ly < gfx_h || ty < gfx_h ? gfx_triangle(lx0,max(gfx_h,ly),lx0,ly,tx0-1,ty,tx0-1,max(gfx_h,ty));
-        ) : (
-          tx0 > fill_slast ? (
-            fill_slast < gfx_h ? gfx_line(fill_slast,gfx_h,fill_slast,fill_slmin);
-            fill_slmin=gfx_h;
+      (!low_fft_valid || freq >= low_split_freq) ? (
+        high_draw_started ? (
+          gfx_r=0; gfx_g=0; gfx_b=1;
+          gfx_a=0.125;
+          tx0=tx|0;
+          lx0=lx|0;
+          tx0>lx0 ? (
+            ly < gfx_h || ty < gfx_h ? gfx_triangle(lx0,max(gfx_h,ly),lx0,ly,tx0-1,ty,tx0-1,max(gfx_h,ty));
           ) : (
-            fill_slmin=min(fill_slmin,ty);
+            tx0 > fill_slast ? (
+              fill_slast < gfx_h ? gfx_line(fill_slast,gfx_h,fill_slast,fill_slmin);
+              fill_slmin=gfx_h;
+            ) : (
+              fill_slmin=min(fill_slmin,ty);
+            );
           );
+          fill_slast=tx0;
+
+          gfx_a=1;
+          gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+        ) : (
+          gfx_x=tx; gfx_y=ty;
+          high_draw_started=1;
         );
-        fill_slast=tx0;
-
-        gfx_a=1;
-        gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+        lx=tx; ly=ty;
       );
-
-      lx=tx; ly=ty;
       i+=1;
     );
 
     slider8 > 0.5 ? (
       i=0;
       lx=0;
+      high_draw_started=0;
       gfx_r=1; gfx_g=0; gfx_b=0;
       gfx_a=0.45;
       loop(fftsize*0.5,
@@ -776,15 +927,108 @@ function draw_frozen_spectrum()
         display_side_db[i] = integrate_buf2[i] * Kdb + iso226_weighting_gain(freq, slider9);
         ty = (display_side_db[i] / Kdb) * -0.5 * sc + 20;
         tx = freq_to_screen_pos_anchored(i * srate / fftsize);
-        i ? (
-          gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
-        ) : (
-          gfx_x=tx; gfx_y=ty;
+        (!low_fft_valid || freq >= low_split_freq) ? (
+          high_draw_started ? (
+            gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+          ) : (
+            gfx_x=tx; gfx_y=ty;
+            high_draw_started=1;
+          );
+          lx=tx; ly=ty;
         );
-        lx=tx; ly=ty;
         i+=1;
       );
       gfx_a=1;
+    );
+
+    low_fft_valid ? (
+      seam_width = min(12, max(1, low_srate / low_fft_size * 4));
+      seam_bin0 = floor(low_split_freq / (srate / fftsize));
+      seam_bin1 = min(seam_bin0 + 1, fftsize * 0.5 - 1);
+      seam_frac = (low_split_freq - seam_bin0 * srate / fftsize) / (srate / fftsize);
+      seam_main_db = display_main_db[seam_bin0] + (display_main_db[seam_bin1] - display_main_db[seam_bin0]) * seam_frac;
+      slider8 > 0.5 ? seam_side_db = display_side_db[seam_bin0] + (display_side_db[seam_bin1] - display_side_db[seam_bin0]) * seam_frac;
+      i=0; lx=0; low_draw_started=0;
+      fill_slmin=gfx_h; fill_slast=0;
+      gfx_r=0; gfx_g=0; gfx_b=1; gfx_a=1;
+      loop(low_num_bins,
+        freq = i * low_srate / low_fft_size;
+        low_display_main_db[i] = low_integrate_buf[i] * Kdb + iso226_weighting_gain(freq, slider9);
+        seam_t = min(max((freq - (low_split_freq - seam_width)) / seam_width, 0), 1);
+        seam_t = seam_t * seam_t * (3 - 2 * seam_t);
+        low_display_main_db[i] += (seam_main_db - low_display_main_db[i]) * seam_t;
+        ty = (low_display_main_db[i] / Kdb) * -0.5 * sc + 20;
+        tx = freq_to_screen_pos_anchored(freq);
+        freq >= 10 && freq < low_split_freq ? (
+          low_draw_started ? (
+            gfx_r=0; gfx_g=0; gfx_b=1; gfx_a=0.125;
+            tx0=tx|0;
+            lx0=lx|0;
+            tx0>lx0 ? (
+              ly < gfx_h || ty < gfx_h ? gfx_triangle(lx0,max(gfx_h,ly),lx0,ly,tx0-1,ty,tx0-1,max(gfx_h,ty));
+            ) : (
+              tx0 > fill_slast ? (
+                fill_slast < gfx_h ? gfx_line(fill_slast,gfx_h,fill_slast,fill_slmin);
+                fill_slmin=gfx_h;
+              ) : (
+                fill_slmin=min(fill_slmin,ty);
+              );
+            );
+            fill_slast=tx0;
+            gfx_a=1;
+            gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+          ) : (
+            gfx_x=tx; gfx_y=ty;
+            low_draw_started=1;
+          );
+          lx=tx; ly=ty;
+        );
+        i+=1;
+      );
+      low_draw_started ? (
+        seam_hi_bin = min(ceil(low_split_freq / (srate / fftsize)), fftsize * 0.5 - 1);
+        seam_hi_freq = seam_hi_bin * srate / fftsize;
+        seam_hi_freq >= low_split_freq ? (
+          seam_hi_x = freq_to_screen_pos_anchored(seam_hi_freq);
+          seam_hi_y = (display_main_db[seam_hi_bin] / Kdb) * -0.5 * sc + 20;
+          gfx_r=0; gfx_g=0; gfx_b=1; gfx_a=1;
+          gfx_x=lx; gfx_y=ly; gfx_lineto(seam_hi_x,seam_hi_y,1);
+        );
+      );
+      slider8 > 0.5 ? (
+        i=0; lx=0; low_draw_started=0;
+        gfx_r=1; gfx_g=0; gfx_b=0; gfx_a=0.45;
+        loop(low_num_bins,
+          freq = i * low_srate / low_fft_size;
+          low_display_side_db[i] = low_integrate_buf2[i] * Kdb + iso226_weighting_gain(freq, slider9);
+          seam_t = min(max((freq - (low_split_freq - seam_width)) / seam_width, 0), 1);
+          seam_t = seam_t * seam_t * (3 - 2 * seam_t);
+          low_display_side_db[i] += (seam_side_db - low_display_side_db[i]) * seam_t;
+          ty = (low_display_side_db[i] / Kdb) * -0.5 * sc + 20;
+          tx = freq_to_screen_pos_anchored(freq);
+          freq >= 10 && freq < low_split_freq ? (
+            low_draw_started ? (
+              gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+            ) : (
+              gfx_x=tx; gfx_y=ty;
+              low_draw_started=1;
+            );
+            lx=tx; ly=ty;
+          );
+          i+=1;
+        );
+        low_draw_started ? (
+          seam_hi_bin = min(ceil(low_split_freq / (srate / fftsize)), fftsize * 0.5 - 1);
+          seam_hi_freq = seam_hi_bin * srate / fftsize;
+          seam_hi_freq >= low_split_freq ? (
+            seam_hi_x = freq_to_screen_pos_anchored(seam_hi_freq);
+            seam_hi_y = (display_side_db[seam_hi_bin] / Kdb) * -0.5 * sc + 20;
+            gfx_r=1; gfx_g=0; gfx_b=0; gfx_a=0.45;
+            gfx_x=lx; gfx_y=ly; gfx_lineto(seam_hi_x,seam_hi_y,1);
+          );
+        );
+        gfx_a=1;
+      );
     );
   );
 );
@@ -824,6 +1068,13 @@ function draw_frozen_spectrum()
             slider3=!slider3;
             slider_automate(slider3);
             old_w = 0;
+           ) : low_accuracy_button.hit_button(mouse_x,mouse_y,-4) ? (
+            slider16 = !slider16;
+             slider_automate(slider16);
+             low_fft_valid = 0;
+            low_rebuild_needed = slider16 > 0.5;
+             update = 1;
+             old_w = 0;
           ) : (
            floor_button.hit_button(mouse_x,mouse_y,1)||
            window_button.hit_button(mouse_x,mouse_y,2)||
@@ -967,6 +1218,7 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
   sprintf(#menustr,"%s|%sAuto freeze on stop",#menustr,auto_freeze_on_stop>.5?"!":"");
   
   sprintf(#menustr,"%s|%sNormalise display",#menustr,slider12>.5?"!":""); // NEW: menu item
+  sprintf(#menustr,"%s|%sLF HQ under 200 Hz",#menustr,slider16>.5?"!":"");
   
  ret = gfx_showmenu(#menustr);
   ret > 0 ? (
@@ -984,6 +1236,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
       slider10 < 0.5 ? (
         rms_frames_stored = 0;
         rms_write_pos = 0;
+        low_rms_frames_stored = 0;
+        low_rms_write_pos = 0;
       );
       old_w=0;
       slider_automate(slider10);
@@ -1005,7 +1259,8 @@ cap_mode && cap_timer < 12 ? cap_timer += 1;
     ) :
     (ret-=8) == 0 ? (freeze_spectrum = !freeze_spectrum; old_w=0; ) :
     (ret-=1) == 0 ? (slider14 = !slider14; auto_freeze_on_stop = slider14; slider_automate(slider14); old_w=0; ) :
-    (ret-=1) == 0 ? (slider12 = !slider12; old_w=0; slider_automate(slider12); ); // NEW: toggle normalise from menu
+    (ret-=1) == 0 ? (slider12 = !slider12; old_w=0; slider_automate(slider12); ) : // NEW: toggle normalise from menu
+    (ret-=1) == 0 ? (slider16 = !slider16; low_fft_valid=0; low_rebuild_needed=slider16>.5; old_w=0; update=1; slider_automate(slider16); );
     
   );
   update=1;
@@ -1083,15 +1338,16 @@ small_mode ? (
   gfx_set(1,1,1,0.25);
   gfx_x=0;
   gfx_y=2;
-  !(gfx_ext_flags&1) ? gfx_printf("FFT %d\n%ddB f",16<<slider1,slider2);
+  !(gfx_ext_flags&1) ? gfx_printf("FFT %d%s\n%ddB f",16<<slider1,slider16>.5?" >200Hz":"",slider2);
 ) : (
-fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d",gfx_w<400?"":"FFT: ",16<<slider1));
+fft_button.draw_button(gfx_w, 0, sprintf(#,"%s%d%s",gfx_w<400?"":"FFT: ",16<<slider1,slider16>.5?" >200Hz":""));
 
   window_button.draw_button(gfx_x-8, 0, 
     (slider4|0)==1 ? "hamming" :  
     (slider4|0)==2 ? "blackman-harris" :
     (slider4|0)==3 ? "blackman" :
     "rectangular"); 
+  low_accuracy_button.draw_button(gfx_x-8, 0, slider16 > 0.5 ? (low_fft_valid ? "LF HQ on" : "LF HQ wait") : "LF HQ off");
   sprintf(#floorstr,"%s%.1fdB",gfx_w<420?"":"floor: ",slider2);
   slider5 <= 0.5 ?
     sprintf(#intstr,"%s: off",gfx_w<420 ? "avg" : "average")
@@ -1121,7 +1377,7 @@ Kdb = 10 / log(10);
 xscale=800/(fftsize-4);
 num_bins = fftsize * 0.5;
 
-((freeze_spectrum > 0.5 || auto_freeze_active > 0.5) && has_spectrum_data) ? (
+((freeze_spectrum > 0.5 || auto_freeze_active > 0.5) && has_spectrum_data && !low_rebuild_needed) ? (
   update=0;
   draw_frozen_spectrum();
 ) : update ? (
@@ -1180,6 +1436,23 @@ num_bins = fftsize * 0.5;
   xscale=800/(fftsize-4);
   num_bins=fftsize*0.5;
 
+  low_windowtype != (slider4|0) ? (
+    low_windowtype = slider4|0;
+    low_dwindowpos = $pi*2/low_fft_size;
+    low_i=low_pwr=0;
+    loop(low_fft_size*.5+1,
+      low_windowpos=low_i*low_dwindowpos;
+      low_pwr += (low_window[low_i] = (
+        low_windowtype==1 ? 0.53836 - cos(low_windowpos)*0.46164 :
+        low_windowtype==2 ? 0.35875 - 0.48829 * cos(low_windowpos) + 0.14128 * cos(2*low_windowpos) - 0.01168 * cos(3*low_windowpos) :
+        low_windowtype==3 ? 0.42 - 0.50 * cos(low_windowpos) + 0.08 * cos(2.0*low_windowpos) :
+        1.0));
+      low_i += 1;
+    );
+    low_pwr=.5/(low_pwr*2-low_window[low_i-1]);
+    loop(low_fft_size*.5+1,low_window[low_i-=1]*=low_pwr);
+  );
+
   // FIX: Calculate RMS frames after fftsize is known
   slider10 > 0.5 ? (
     frame_duration_ms = (fftsize / srate) * 1000.0;
@@ -1187,6 +1460,13 @@ num_bins = fftsize * 0.5;
     max_reasonable_frames = floor(1000 / frame_duration_ms);
     rms_frames_to_avg = min(rms_frames_to_avg, max_rms_frames);
     rms_frames_to_avg = min(rms_frames_to_avg, max_reasonable_frames);
+  );
+  slider10 > 0.5 ? (
+    low_frame_duration_ms = (low_fft_size / max(low_srate,1)) * 1000.0;
+    low_rms_frames_to_avg = max(floor(slider11 / low_frame_duration_ms) + 1, 1);
+    low_max_reasonable_frames = max(1, floor(1000 / low_frame_duration_ms));
+    low_rms_frames_to_avg = min(low_rms_frames_to_avg, max_rms_frames);
+    low_rms_frames_to_avg = min(low_rms_frames_to_avg, low_max_reasonable_frames);
   );
   
   octave_smooth_width = get_octave_smoothing_width(slider13|0);
@@ -1213,14 +1493,16 @@ num_bins = fftsize * 0.5;
   fft_real(fftworkspace,fftsize);
   fft_permute(fftworkspace,fftsize/2);
   fftworkspace[1]=0;
+  low_fft_valid = slider16 > 0.5 && low_samples_filled >= low_fft_size;
 
   ascale=gfx_h/$pi*0.25;
 
-  // Phase drawing (unchanged)
+  // Main FFT phase drawing uses the high range when low-frequency accuracy is ready.
   buf3=fftworkspace;
   buf2=integrate_buf+max_fft_size*0.5;
   i=0;
   lx=0;
+  phase_draw_started=0;
   slider3 ? loop(fftsize*0.5,
     ang=-atan2(buf3[1],buf3[]);
     buf3+=2;
@@ -1229,9 +1511,17 @@ num_bins = fftsize * 0.5;
       buf2+=1;
     );
     ty2=ang*ascale + gfx_h*0.5;
-    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
-    i ? ( gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1; gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1) );
-    lx=tx; ly2=ty2;
+    freq = i * srate / fftsize;
+    tx = freq_to_screen_pos_anchored(freq);
+    (!low_fft_valid || freq >= low_split_freq) ? (
+      phase_draw_started ? (
+        gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1; gfx_x=lx; gfx_y=ly2; gfx_lineto(tx,ty2,1);
+      ) : (
+        gfx_x=tx; gfx_y=ty2;
+        phase_draw_started=1;
+      );
+      lx=tx; ly2=ty2;
+    );
     i+=1;
   );
 
@@ -1255,6 +1545,97 @@ num_bins = fftsize * 0.5;
     i+=1;
   );
 
+  low_fft_valid ? (
+    // Read the circular low-rate history oldest-first and apply the same
+    // selected window as the main FFT before transforming the 4096 samples.
+    low_i = 0;
+    low_ring_idx = low_ring_pos;
+    loop(low_fft_size,
+      low_window_idx = low_i <= low_num_bins ? low_i : low_fft_size - low_i;
+      low_fft_workspace[low_i] = low_ring_sum[low_ring_idx] * low_window[low_window_idx];
+      low_ring_idx += 1;
+      low_ring_idx >= low_fft_size ? low_ring_idx = 0;
+      low_i += 1;
+    );
+    fft_real(low_fft_workspace, low_fft_size);
+    fft_permute(low_fft_workspace, low_fft_size*0.5);
+    low_fft_workspace[1] = 0;
+
+    slider3 ? (
+      low_buf3 = low_fft_workspace;
+      low_i = 0;
+      low_lx = 0;
+      low_phase_draw_started = 0;
+      loop(low_num_bins,
+        low_ang = -atan2(low_buf3[1],low_buf3[]);
+        low_buf3 += 2;
+        integrate_en ? (
+          low_ang = low_integrate_phase[low_i] += integrate_sc * (low_ang - low_integrate_phase[low_i]);
+        ) : (
+          low_integrate_phase[low_i] = low_ang;
+        );
+        low_ty2 = low_ang*ascale + gfx_h*0.5;
+        low_freq = low_i * low_srate / low_fft_size;
+        low_tx = freq_to_screen_pos_anchored(low_freq);
+        low_freq >= 10 && low_freq < low_split_freq ? (
+          low_phase_draw_started ? (
+            gfx_r=0.6; gfx_g=0; gfx_b=0.8; gfx_a=1; gfx_x=low_lx; gfx_y=low_ly2; gfx_lineto(low_tx,low_ty2,1);
+          ) : (
+            gfx_x=low_tx; gfx_y=low_ty2;
+            low_phase_draw_started=1;
+          );
+          low_lx=low_tx; low_ly2=low_ty2;
+        );
+        low_i += 1;
+      );
+    );
+
+    low_buf3 = low_fft_workspace;
+    low_i = 0;
+    loop(low_num_bins,
+      low_mag = sqrt(max(sqr(low_buf3[0])+sqr(low_buf3[1]),(10^(-500/20*2))));
+      slider10 > 0.5 ? (
+        low_rms_mag = compute_low_rms_magnitude(low_i, low_mag, 0);
+        low_mag = low_rms_mag * 0.7071067811865476;
+      );
+      low_mag_buf_temp[low_i] = log(sqr(low_mag));
+      low_buf3 += 2;
+      low_i += 1;
+    );
+
+    slider8 > 0.5 ? (
+      low_i = 0;
+      low_ring_idx = low_ring_pos;
+      loop(low_fft_size,
+        low_window_idx = low_i <= low_num_bins ? low_i : low_fft_size - low_i;
+        low_fft_workspace[low_i] = low_ring_side[low_ring_idx] * low_window[low_window_idx];
+        low_ring_idx += 1;
+        low_ring_idx >= low_fft_size ? low_ring_idx = 0;
+        low_i += 1;
+      );
+      fft_real(low_fft_workspace, low_fft_size);
+      fft_permute(low_fft_workspace, low_fft_size*0.5);
+      low_fft_workspace[1] = 0;
+      low_buf3 = low_fft_workspace;
+      low_i = 0;
+      loop(low_num_bins,
+        low_mag = sqrt(max(sqr(low_buf3[0])+sqr(low_buf3[1]),(10^(-500/20*2))));
+        slider10 > 0.5 ? (
+          low_rms_mag = compute_low_rms_magnitude(low_i, low_mag, 1);
+          low_mag = low_rms_mag * 0.7071067811865476;
+        );
+        low_mag_buf_temp_side[low_i] = log(sqr(low_mag));
+        low_buf3 += 2;
+        low_i += 1;
+      );
+    );
+
+    slider10 > 0.5 ? (
+      low_rms_write_pos = (low_rms_write_pos + 1) % max_rms_frames;
+      low_rms_frames_stored = min(low_rms_frames_stored + 1, max_rms_frames);
+    );
+  );
+
   // advance circular RMS write pointer and stored count (clamped to safe max)
   slider10 > 0.5 ? (
     rms_write_pos = (rms_write_pos + 1) % max_rms_frames;
@@ -1270,16 +1651,36 @@ num_bins = fftsize * 0.5;
   // smoothing coefficient already set in @init; tweak norm_smooth if needed
 
   // Apply octave smoothing before calculating peak for normalization
-  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio);
+  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio, mag_buf_temp);
+  low_fft_valid && octave_smooth_half_ratio > 1 ? (
+    apply_octave_smoothing(low_num_bins, octave_smooth_half_ratio, low_mag_buf_temp);
+    slider8 > 0.5 ? apply_octave_smoothing(low_num_bins, octave_smooth_half_ratio, low_mag_buf_temp_side);
+  );
 
   // find peak in dB from smoothed data
   peak_db = -1000;
   i=0;
   // conversion factor ln(power) -> dB: Kdb = 10 / ln(10)
   loop(fftsize*0.5,
-    dbi = mag_buf_temp[i] * Kdb + iso226_weighting_gain(i * srate / fftsize, slider9);
-    dbi > peak_db ? peak_db = dbi;
+    freq = i * srate / fftsize;
+    (!low_fft_valid || freq >= low_split_freq) ? (
+      dbi = mag_buf_temp[i] * Kdb + iso226_weighting_gain(freq, slider9);
+      dbi > peak_db ? peak_db = dbi;
+    );
     i += 1;
+  );
+  low_fft_valid ? (
+    low_peak_db = -1000;
+    low_i = 0;
+    loop(low_num_bins,
+      low_freq = low_i * low_srate / low_fft_size;
+      low_freq < low_split_freq ? (
+        low_dbi = low_mag_buf_temp[low_i] * Kdb + iso226_weighting_gain(low_freq, slider9);
+        low_dbi > low_peak_db ? low_peak_db = low_dbi;
+      );
+      low_i += 1;
+    );
+    peak_db = max(peak_db, low_peak_db);
   );
 
 // determine normalisation behaviour
@@ -1317,6 +1718,14 @@ slider12 > 0.5 ? (
     mag_buf_temp[i] -= ln_offset;
     i += 1;
   );
+  low_fft_valid ? (
+    low_i = 0;
+    loop(low_num_bins,
+      low_mag_buf_temp[low_i] -= ln_offset;
+      slider8 > 0.5 ? (low_mag_buf_temp_side[low_i] -= ln_offset;);
+      low_i += 1;
+    );
+  );
   // --- END NEW: Normalisation ---
 
   buf2=integrate_buf;
@@ -1340,15 +1749,16 @@ slider12 > 0.5 ? (
       integrate_buf[i] = ty;
     );
 
-    iso_corr = iso226_weighting_gain(i * srate / fftsize, slider9);
+    freq = i * srate / fftsize;
+    iso_corr = iso226_weighting_gain(freq, slider9);
     ty += iso_corr / Kdb;
     display_main_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
-    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
+    tx = freq_to_screen_pos_anchored(freq);
 
-    i ? 
-    ( 
-    gfx_r=0; gfx_g=0; gfx_b=1; // main spectrum: blue
+    (!low_fft_valid || freq >= low_split_freq) ? (
+      (i && (!low_fft_valid || (i-1)*srate/fftsize >= low_split_freq)) ? (
+        gfx_r=0; gfx_g=0; gfx_b=1; // main spectrum: blue
       
       1/*fill?*/ ? (
         gfx_a=0.125;
@@ -1368,14 +1778,90 @@ slider12 > 0.5 ? (
       );  
   gfx_a=1; // main spectrum line opacity (100%)
       gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1) ;
+      ) : (
+        gfx_x=tx; gfx_y=ty;
+      );
+      lx=tx; ly=ty;
     );
-
-    ty<gfx_h ? update=1;
-
-    lx=tx; ly=ty; ly2=ty2;
+    (!low_fft_valid || freq >= low_split_freq) && ty<gfx_h ? update=1;
     i+=1;
   );
   has_spectrum_data = 1;
+
+  low_fft_valid ? (
+    low_seam_width = min(12, max(1, low_srate / low_fft_size * 4));
+    low_seam_bin0 = floor(low_split_freq / (srate / fftsize));
+    low_seam_bin1 = min(low_seam_bin0 + 1, fftsize * 0.5 - 1);
+    low_seam_frac = (low_split_freq - low_seam_bin0 * srate / fftsize) / (srate / fftsize);
+    low_seam_main_db = display_main_db[low_seam_bin0] + (display_main_db[low_seam_bin1] - display_main_db[low_seam_bin0]) * low_seam_frac;
+    slider8 > 0.5 ? low_seam_side_db = display_side_db[low_seam_bin0] + (display_side_db[low_seam_bin1] - display_side_db[low_seam_bin0]) * low_seam_frac;
+    low_buf2 = low_integrate_buf;
+    low_lx = 0;
+    low_draw_started = 0;
+    low_fill_slmin = gfx_h;
+    low_fill_slast = 0;
+    low_octavegainoffs = log(1 + slider7 * low_fft_size / low_srate);
+    low_i = 0;
+    loop(low_num_bins,
+      low_ty = low_mag_buf_temp[low_i];
+      octavegain > 0 ? (
+        low_ty += (log(low_i + 1) - low_octavegainoffs) * octavegain;
+      );
+      integrate_en ? (
+        low_ty = low_buf2[] += integrate_sc * (low_ty - low_buf2[]);
+        low_buf2 += 1;
+      ) : (
+        low_integrate_buf[low_i] = low_ty;
+      );
+      low_freq = low_i * low_srate / low_fft_size;
+      low_iso_corr = iso226_weighting_gain(low_freq, slider9);
+      low_ty += low_iso_corr / Kdb;
+      low_display_main_db[low_i] = low_ty * Kdb;
+      low_seam_t = min(max((low_freq - (low_split_freq - low_seam_width)) / low_seam_width, 0), 1);
+      low_seam_t = low_seam_t * low_seam_t * (3 - 2 * low_seam_t);
+      low_display_main_db[low_i] += (low_seam_main_db - low_display_main_db[low_i]) * low_seam_t;
+      low_ty = low_display_main_db[low_i] / Kdb;
+      low_ty = low_ty*-0.5*sc + 20;
+      low_tx = freq_to_screen_pos_anchored(low_freq);
+      low_freq >= 10 && low_freq < low_split_freq ? (
+        low_draw_started ? (
+          gfx_r=0; gfx_g=0; gfx_b=1; gfx_a=0.125;
+          low_tx0 = low_tx|0;
+          low_lx0 = low_lx|0;
+          low_tx0 > low_lx0 ? (
+            low_ly < gfx_h || low_ty < gfx_h ? gfx_triangle(low_lx0,max(gfx_h,low_ly),low_lx0,low_ly,low_tx0-1,low_ty,low_tx0-1,max(gfx_h,low_ty));
+          ) : (
+            low_tx0 > low_fill_slast ? (
+              low_fill_slast < gfx_h ? gfx_line(low_fill_slast,gfx_h,low_fill_slast,low_fill_slmin);
+              low_fill_slmin=gfx_h;
+            ) : (
+              low_fill_slmin=min(low_fill_slmin,low_ty);
+            );
+          );
+          low_fill_slast=low_tx0;
+          gfx_a=1;
+          gfx_x=low_lx; gfx_y=low_ly; gfx_lineto(low_tx,low_ty,1);
+        ) : (
+          gfx_x=low_tx; gfx_y=low_ty;
+          low_draw_started = 1;
+        );
+        low_ty < gfx_h ? update=1;
+        low_lx=low_tx; low_ly=low_ty;
+      );
+      low_i += 1;
+    );
+    low_draw_started ? (
+      low_seam_hi_bin = min(ceil(low_split_freq / (srate / fftsize)), fftsize * 0.5 - 1);
+      low_seam_hi_freq = low_seam_hi_bin * srate / fftsize;
+      low_seam_hi_freq >= low_split_freq ? (
+        low_seam_hi_x = freq_to_screen_pos_anchored(low_seam_hi_freq);
+        low_seam_hi_y = (display_main_db[low_seam_hi_bin] / Kdb) * -0.5 * sc + 20;
+        gfx_r=0; gfx_g=0; gfx_b=1; gfx_a=1;
+        gfx_x=low_lx; gfx_y=low_ly; gfx_lineto(low_seam_hi_x,low_seam_hi_y,1);
+      );
+    );
+  );
+  low_rebuild_needed = 0;
 );
 
    // --- derived stream FFT and overlay drawing (derived stored in recpos2 region)
@@ -1425,7 +1911,7 @@ slider12 > 0.5 ? (
   );
   
   // Apply octave smoothing to derived before normalization
-  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio);
+  octave_smooth_half_ratio > 1 ? apply_octave_smoothing(fftsize*0.5, octave_smooth_half_ratio, mag_buf_temp);
   
   // --- NEW: apply same normalisation offset to derived stream so side graph matches main ---
   i=0;
@@ -1439,6 +1925,7 @@ slider12 > 0.5 ? (
   buf2=integrate_buf2;
   lx=0;
   i=0;
+  side_draw_started = 0;
   gfx_r=1; gfx_g=0; gfx_b=0; // red overlay
   gfx_a=0.45; // overlay opacity (45%)
   loop(fftsize*0.5,
@@ -1454,33 +1941,96 @@ slider12 > 0.5 ? (
       integrate_buf2[i] = ty;
     );
 
-    iso_corr = iso226_weighting_gain(i * srate / fftsize, slider9);
+    freq = i * srate / fftsize;
+    iso_corr = iso226_weighting_gain(freq, slider9);
     ty += iso_corr / Kdb;
     display_side_db[i] = ty * Kdb;
     ty = ty*-0.5*sc + 20;
-    tx = freq_to_screen_pos_anchored(i * srate / fftsize);
+    tx = freq_to_screen_pos_anchored(freq);
 
-    i ? (
-      gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
-    ) : (
-      gfx_x=tx; gfx_y=ty;
+    (!low_fft_valid || freq >= low_split_freq) ? (
+      side_draw_started ? (
+        gfx_x=lx; gfx_y=ly; gfx_lineto(tx,ty,1);
+      ) : (
+        gfx_x=tx; gfx_y=ty;
+        side_draw_started = 1;
+      );
+      lx=tx; ly=ty;
     );
 
-    lx=tx; ly=ty;
     i+=1;
     );
     ); // end slider8 > 0.5 conditional
+    low_fft_valid && slider8 > 0.5 ? (
+      low_buf2 = low_integrate_buf2;
+      low_lx = 0;
+      low_side_draw_started = 0;
+      low_octavegainoffs = log(1 + slider7 * low_fft_size / low_srate);
+      gfx_r=1; gfx_g=0; gfx_b=0; gfx_a=0.45;
+      low_i = 0;
+      loop(low_num_bins,
+        low_ty = low_mag_buf_temp_side[low_i];
+        octavegain > 0 ? (
+          low_ty += (log(low_i + 1) - low_octavegainoffs) * octavegain;
+        );
+        integrate_en ? (
+          low_ty = low_buf2[] += integrate_sc * (low_ty - low_buf2[]);
+          low_buf2 += 1;
+        ) : (
+          low_integrate_buf2[low_i] = low_ty;
+        );
+        low_freq = low_i * low_srate / low_fft_size;
+        low_iso_corr = iso226_weighting_gain(low_freq, slider9);
+        low_ty += low_iso_corr / Kdb;
+        low_display_side_db[low_i] = low_ty * Kdb;
+        low_seam_t = min(max((low_freq - (low_split_freq - low_seam_width)) / low_seam_width, 0), 1);
+        low_seam_t = low_seam_t * low_seam_t * (3 - 2 * low_seam_t);
+        low_display_side_db[low_i] += (low_seam_side_db - low_display_side_db[low_i]) * low_seam_t;
+        low_ty = low_display_side_db[low_i] / Kdb;
+        low_ty = low_ty*-0.5*sc + 20;
+        low_tx = freq_to_screen_pos_anchored(low_freq);
+        low_freq >= 10 && low_freq < low_split_freq ? (
+          low_side_draw_started ? (
+            gfx_x=low_lx; gfx_y=low_ly; gfx_lineto(low_tx,low_ty,1);
+          ) : (
+            gfx_x=low_tx; gfx_y=low_ty;
+            low_side_draw_started = 1;
+          );
+          low_lx=low_tx; low_ly=low_ty;
+        );
+        low_i += 1;
+      );
+      low_side_draw_started ? (
+        low_seam_hi_bin = min(ceil(low_split_freq / (srate / fftsize)), fftsize * 0.5 - 1);
+        low_seam_hi_freq = low_seam_hi_bin * srate / fftsize;
+        low_seam_hi_freq >= low_split_freq ? (
+          low_seam_hi_x = freq_to_screen_pos_anchored(low_seam_hi_freq);
+          low_seam_hi_y = (display_side_db[low_seam_hi_bin] / Kdb) * -0.5 * sc + 20;
+          gfx_r=1; gfx_g=0; gfx_b=0; gfx_a=0.45;
+          gfx_x=low_lx; gfx_y=low_ly; gfx_lineto(low_seam_hi_x,low_seam_hi_y,1);
+        );
+      );
+    );
     has_spectrum_data && mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
       hover_freq = screen_pos_to_freq_anchored(mouse_x);
-      hover_bin = hover_freq / (srate / fftsize);
-      hover_bin = min(max(hover_bin, 0), num_bins - 1);
-      hover_bin0 = floor(hover_bin);
-      hover_bin1 = min(hover_bin0 + 1, num_bins - 1);
-      hover_frac = hover_bin - hover_bin0;
-
-      spectrum_db = display_main_db[hover_bin0] + (display_main_db[hover_bin1] - display_main_db[hover_bin0]) * hover_frac;
+      low_fft_valid && hover_freq < low_split_freq ? (
+        hover_bin = hover_freq / (low_srate / low_fft_size);
+        hover_bin = min(max(hover_bin, 0), low_num_bins - 1);
+        hover_bin0 = floor(hover_bin);
+        hover_bin1 = min(hover_bin0 + 1, low_num_bins - 1);
+        hover_frac = hover_bin - hover_bin0;
+        spectrum_db = low_display_main_db[hover_bin0] + (low_display_main_db[hover_bin1] - low_display_main_db[hover_bin0]) * hover_frac;
+        hover_freq = hover_bin * low_srate / low_fft_size;
+      ) : (
+        hover_bin = hover_freq / (srate / fftsize);
+        hover_bin = min(max(hover_bin, 0), num_bins - 1);
+        hover_bin0 = floor(hover_bin);
+        hover_bin1 = min(hover_bin0 + 1, num_bins - 1);
+        hover_frac = hover_bin - hover_bin0;
+        spectrum_db = display_main_db[hover_bin0] + (display_main_db[hover_bin1] - display_main_db[hover_bin0]) * hover_frac;
+        hover_freq = hover_bin * srate / fftsize;
+      );
       cursor_db = ((20 - mouse_y) / (0.5 * sc)) * Kdb;
-      hover_freq = hover_bin * srate / fftsize;
 
       hover_freq >= 1000 ?
         sprintf(#hoverfreq, "%.2fkHz", hover_freq * 0.001)
