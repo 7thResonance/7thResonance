@@ -1,7 +1,7 @@
 desc:7R Band Monitor
 author:7thResonance
-tags:utility
-version:1.10.7
+tags:Tools
+version:1.10.8
 about:A multiband monitor to isolate frequencies. Basically a shittier version of ISOL8.
 changelog: 
   Added tag
