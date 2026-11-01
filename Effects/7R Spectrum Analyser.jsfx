@@ -1,6 +1,7 @@
 desc:7R Spectrum Analyser
+tags:meter
 Author: 7thResonance
-version: 1.14
+version: 1.14.1
 about: modded version of the cockos spectrum analyser.
     - Added Sides graph (red)
     - Main (sum) graph is blue

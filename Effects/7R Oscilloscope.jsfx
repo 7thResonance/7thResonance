@@ -1,6 +1,7 @@
 desc:7R Oscilloscope
 Author: 7thResonance
-version: 1.4
+version: 1.4.1
+tags:meter
 changelog: - FFT based pitch detection. a bit better accuracy.
     - reduced the opacity of the filled colour
     - Smoothed the window change.

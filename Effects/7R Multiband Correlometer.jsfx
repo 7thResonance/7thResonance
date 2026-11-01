@@ -1,6 +1,7 @@
 desc:7R Multiband Correlometer
+tags:meter
 author:7thResonance
-version: 1.4
+version: 1.4.1
 about: A simple Multiband Correlometer
         pan visualisation
 changelog: - added multirate FFT (lower frequencies have more accuracy) 
